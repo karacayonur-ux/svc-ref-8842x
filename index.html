@@ -3,6 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Forces iPad/Safari (including "Add to Home Screen" mode) to always fetch
+     a fresh copy instead of reusing a cached one from before this shift's
+     data was pulled. Without this, a home-screen icon can keep showing
+     yesterday's reservations even after the file is updated on GitHub. -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>The Address - Host Stand Book</title>
 <style>
   :root{
@@ -182,28 +189,10 @@ function isSplit(table, list){
   return list.map(String).includes(s+"A");
 }
 
-// Table IDs get embedded inside double-quoted onchange="..." HTML attributes.
-// JSON.stringify("15A") produces "15A" (with real double-quote characters),
-// which prematurely closes the attribute and truncates the inline handler,
-// throwing "Uncaught SyntaxError: Unexpected end of input" the moment a
-// split table (15A/16A/17A/19A) gets a guest count, note, or assignment.
-// This wraps the value in single quotes instead, which is always safe inside
-// a double-quoted attribute.
 function jsStr(v){
   return "'" + String(v).replace(/\\/g,"\\\\").replace(/'/g,"\\'") + "'";
 }
 
-// Real seat counts per table, as given by the restaurant (Aug 2026). Split
-// pairs (15/15A etc.) are two separate physical seatings — the "A" half is
-// the smaller separated piece, matching how table 19 was described: normally
-// 4-top, but when split each half seats 2. Tables 4 and 23 confirmed as
-// 4-tops (Aug 8, 2026).
-// Tables 1-7 are a flexible/combinable zone — they can be physically pushed
-// together or split apart, so a "+" reservation table like "6+" (e.g. an
-// 8-top built from Table 6 plus a neighbor) is a legitimate combo, NOT a
-// capacity mismatch, even though the individual table below shows a smaller
-// max. Don't flag "N+" assignments in the 1-7 range as capacity errors
-// (confirmed by the restaurant, Aug 10 2026).
 const TABLE_CAPACITY = {
   1:{min:5,max:6}, 2:{min:2,max:2}, 3:{min:4,max:4}, 4:{min:4,max:4}, 5:{min:4,max:4},
   6:{min:2,max:2}, 7:{min:4,max:4}, 8:{min:2,max:3}, 9:{min:4,max:4},
@@ -213,17 +202,15 @@ const TABLE_CAPACITY = {
   18:{min:4,max:4}, 19:{min:4,max:4}, "19A":{min:2,max:2},
   20:{min:6,max:6}, 21:{min:4,max:4}, 22:{min:2,max:2}, 23:{min:4,max:4}, 24:{min:3,max:4},
 };
-function tableCapacity(t){ return TABLE_CAPACITY[t] ?? null; } // bar/patio pool: unknown/flexible
+function tableCapacity(t){ return TABLE_CAPACITY[t] ?? null; }
 
-// Rule of thumb from the floor: parties of 2-6 typically turn in ~2 hours;
-// parties of 10+ typically need ~2.5-3 hours. 7-9 interpolates between the two.
 function turnDurationMinutes(partySize){
   const n = Number(partySize)||0;
   if(n<=6) return 120;
   if(n>=10) return 165;
   return Math.round(120 + ((n-6)/4)*45);
 }
-const BLOCK_START_MIN = [16*60, 18*60, 20*60]; // 4PM/6PM/8PM block boundaries, used for reporting + reassignment only
+const BLOCK_START_MIN = [16*60, 18*60, 20*60];
 function minutesToLabel(mins){
   let h = Math.floor(mins/60)%24, m = ((mins%60)+60)%60;
   const ap = h>=12 ? "PM" : "AM";
@@ -231,9 +218,6 @@ function minutesToLabel(mins){
   return `${h12}:${String(m).padStart(2,"0")} ${ap}`;
 }
 
-// Normalizes OpenTable's reservation table field (sometimes suffixed with
-// "+", e.g. "16+", "8+") down to the plain table ID used in TABLE_CAPACITY
-// and CONFIGS, so a pulled reservation matches a real table on the map.
 function normalizeResTable(t){ return String(t).replace(/\+$/,""); }
 
 function timeStrToMinutes(t){
@@ -252,19 +236,12 @@ function nowTimeLabel(){
   let h12 = h%12; if(h12===0) h12=12;
   return `${h12}:${String(m).padStart(2,"0")} ${ap}`;
 }
-// Which of the 3 reporting windows (4-6/6-8/8-Close) a real clock time falls
-// in — used only for the Server Load Summary columns, Hourly Intensity chart,
-// and the Live Reassignments feature. Never used for data entry anymore.
 function seatingBlockIdx(mins){
   if(mins >= BLOCK_START_MIN[2]) return 2;
   if(mins >= BLOCK_START_MIN[1]) return 1;
   return 0;
 }
 
-// Every table's real seatings tonight = tonight's OpenTable reservations for
-// that table (exact pulled times, flow in automatically) plus any walk-ins
-// the hostess logs with a real time. This — not a manual block count — is
-// now the single source of truth for guest totals, turns, and free times.
 function tableReservations(cfgKey, table){
   const r = RESERVATIONS_TODAY;
   if(!r || !r.list) return [];
@@ -292,10 +269,6 @@ function tableWalkins(cfgKey, table){
 function tableSeatings(cfgKey, table){
   return [...tableReservations(cfgKey, table), ...tableWalkins(cfgKey, table)].sort((a,b)=>a.min-b.min);
 }
-// Flat, time-sorted list of every real seating tonight across a config's
-// tables — used to populate the "which seating?" picker in Live
-// Reassignments, so a specific reservation/walk-in can be moved to a
-// different server rather than a whole generic time window.
 function allSeatingsForCfg(cfgKey){
   const cfg = CONFIGS[cfgKey];
   if(!cfg) return [];
@@ -310,8 +283,6 @@ function allSeatingsForCfg(cfgKey){
   return out;
 }
 let SEATING_OPTIONS = {};
-// When will this table free up: the last real seating's clock time plus the
-// turn-duration rule of thumb for that party's size.
 function expectedFreeMinutes(cfgKey, table){
   const seats = tableSeatings(cfgKey, table);
   if(!seats.length) return null;
@@ -319,9 +290,6 @@ function expectedFreeMinutes(cfgKey, table){
   return last.min + turnDurationMinutes(last.size);
 }
 
-// For every table with two-plus reservations tonight, checks whether the
-// gap before the next one is shorter than the expected turn time — the real
-// squeeze/overlap risk points to flag to the floor before doors open.
 function reservationSqueezeCheck(){
   const r = RESERVATIONS_TODAY;
   if(!r || !r.list) return [];
@@ -346,8 +314,6 @@ function reservationSqueezeCheck(){
   return rows;
 }
 
-// Which reservation times bring the most parties through the door at once —
-// the moments the host stand and kitchen feel the most pressure simultaneously.
 function reservationArrivalWaves(){
   const r = RESERVATIONS_TODAY;
   if(!r || !r.list) return [];
@@ -359,8 +325,6 @@ function reservationArrivalWaves(){
   return Object.values(map).sort((a,b)=>b.parties-a.parties || b.guests-a.guests || a.min-b.min);
 }
 
-// Tables with zero or one reservation tonight — open for walk-ins the rest
-// of the shift once that one party (if any) is seated.
 function reservationOpenTables(cfgKey){
   const r = RESERVATIONS_TODAY;
   const cfg = CONFIGS[cfgKey];
@@ -397,6 +361,20 @@ if(!STATE.header) STATE.header = {};
 if(!STATE.data) STATE.data = {};
 if(!STATE.history) STATE.history = {};
 if(!STATE.walkins) STATE.walkins = {};
+if(!STATE.serverNames) STATE.serverNames = {};
+
+function getServerDisplayName(cfgKey, serverKey){
+  const k = `${cfgKey}__${serverKey}`;
+  return (STATE.serverNames && STATE.serverNames[k]) || serverKey;
+}
+function setServerDisplayName(cfgKey, serverKey, val){
+  if(!STATE.serverNames) STATE.serverNames = {};
+  const k = `${cfgKey}__${serverKey}`;
+  const v = (val||"").trim();
+  if(v) STATE.serverNames[k] = v; else delete STATE.serverNames[k];
+  saveState(STATE);
+  renderAll();
+}
 
 function cellId(cfgKey, table, col){ return `${cfgKey}__${table}__${col}`; }
 function getVal(cfgKey, table, col){
@@ -410,9 +388,6 @@ function setVal(cfgKey, table, col, val){
   saveState(STATE);
 }
 
-// Logs a real walk-in seating for a table — the only manual entry left.
-// Reservations never need this; they flow in automatically from
-// RESERVATIONS_TODAY the moment that data is pulled.
 function addWalkin(cfgKey, table, time, size, guest){
   if(!STATE.walkins[cfgKey]) STATE.walkins[cfgKey] = [];
   STATE.walkins[cfgKey].push({
@@ -428,8 +403,6 @@ function removeWalkin(cfgKey, id){
   saveState(STATE);
   renderAll();
 }
-// Quick 3-prompt flow for logging a walk-in against a specific table row —
-// defaults the time to right now so it matches how OpenTable itself logs one.
 function addWalkinPrompt(cfgKey, table){
   const timeIn = prompt(`Time seated at Table ${table}:`, nowTimeLabel());
   if(timeIn===null) return;
@@ -455,13 +428,6 @@ function loadStatus(total){
   return {label:"CRITICAL", cls:"status-CRITICAL"};
 }
 
-// Live, per-seating table reassignments for tonight — e.g. "move the 7:15
-// reservation at Table 15A to Server 3" or "move the 8:30 walk-in at Table
-// 14 to Server 6" to balance load on the fly. Reassignment is per specific
-// seating (not a generic time window) so it lines up exactly with what's
-// actually happening on the floor. This only changes which server a
-// seating's guests count toward in the Load Summary — it doesn't move
-// anyone physically seated.
 if(!STATE.reassign) STATE.reassign = {};
 
 function defaultOwnerOfTable(cfgKey, table){
@@ -472,24 +438,15 @@ function defaultOwnerOfTable(cfgKey, table){
   return found ? found.name : null;
 }
 
-// Matched by seatId AND table together — a reservation's seatId (res_N) is
-// just its position in tonight's pulled list, so if the list is ever
-// re-pulled (new counts, a new day) that same id can land on a completely
-// different table. Requiring the table to match too means a stale
-// reassignment from a prior pull silently stops applying instead of
-// mis-attributing some other party's guests to the wrong server.
 function seatOwnerServer(cfgKey, table, seatId){
   const list = STATE.reassign[cfgKey] || [];
   const hit = list.find(r=>r.seatId===seatId && String(r.table)===String(table));
   if(hit) return hit.toServer;
   const def = defaultOwnerOfTable(cfgKey, table);
   if(def) return def;
-  return getVal(cfgKey, table, "assign") || null; // pool tables, whole-night assign
+  return getVal(cfgKey, table, "assign") || null;
 }
 
-// Moves one specific seating (a reservation or walk-in, identified by
-// seatId) to a different server for tonight. time/size/guest are a snapshot
-// for display in the "Active Tonight" list.
 function addReassignment(cfgKey, table, seatId, time, size, guest, toServer){
   if(!STATE.reassign[cfgKey]) STATE.reassign[cfgKey] = [];
   const list = STATE.reassign[cfgKey];
@@ -503,11 +460,9 @@ function addReassignment(cfgKey, table, seatId, time, size, guest, toServer){
 function removeReassignment(cfgKey, seatId){
   if(!STATE.reassign[cfgKey]) return;
   STATE.reassign[cfgKey] = STATE.reassign[cfgKey].filter(r=>r.seatId!==seatId);
-  saveState(STATE);  renderAll();
+  saveState(STATE);
+  renderAll();
 }
-// Returns the server a specific seating was explicitly moved to tonight (or
-// null if it's still counted where it physically sits) — used to tag the
-// seating line in the table row so a transfer is visible right where it is.
 function reassignedToFor(cfgKey, table, seatId){
   const list = STATE.reassign[cfgKey] || [];
   const hit = list.find(r=>r.seatId===seatId && String(r.table)===String(table));
@@ -564,7 +519,7 @@ function renderTableRow(cfgKey, table, area, list, assignedServer, showAssign){
   let assignCell;
   if(showAssign){
     const cfg = CONFIGS[cfgKey];
-    const opts = cfg.servers.map(s=>`<option value="${s.name}" ${assignVal===s.name?"selected":""}>${s.name}</option>`).join("");
+    const opts = cfg.servers.map(s=>`<option value="${s.name}" ${assignVal===s.name?"selected":""}>${getServerDisplayName(cfgKey,s.name)}</option>`).join("");
     assignCell = `<select class="assign" onchange="setVal('${cfgKey}',${jsStr(table)},'assign',this.value);renderAll();">
       <option value="">-</option>${opts}</select>`;
   } else {
@@ -585,10 +540,6 @@ function renderTableRow(cfgKey, table, area, list, assignedServer, showAssign){
   </tr>`;
 }
 
-// Renders every real seating (reservations first, then walk-ins, sorted by
-// time) for a table row — this replaces the old 3 manual number boxes.
-// Reservation lines are read-only (they come straight from OpenTable); a
-// walk-in line has a small "✕" to remove it if it was logged by mistake.
 function renderSeatingsCell(cfgKey, table){
   const seats = tableSeatings(cfgKey, table);
   if(!seats.length) return `<span style="color:#aaa;">—</span>`;
@@ -603,13 +554,10 @@ function renderSeatingsCell(cfgKey, table){
   }).join("");
 }
 
-// Fully automatic — bucketed from each table's real seatings (reservations
-// pulled from OpenTable + logged walk-ins), never a manual entry. Always
-// reflects the currently-open tab and updates the moment anything changes.
 function renderHourly(){
   const section = document.getElementById("hourly-section");
   const cfg = CONFIGS[currentTab];
-  if(!cfg){ if(section) section.style.display = "none"; return; } // History tab has no block data
+  if(!cfg){ if(section) section.style.display = "none"; return; }
   if(section) section.style.display = "";
   const bt = computeBlockTotals(currentTab);
   const max = Math.max(...bt.totals, 1);
@@ -630,8 +578,6 @@ function renderHourly(){
     : `<b>Busiest block:</b> ${bt.labels[bt.busiestIdx]} (${bt.totals[bt.busiestIdx]} guests) &nbsp;|&nbsp; <b>Total:</b> ${totalGuests} guests &nbsp;|&nbsp; <span style="color:#888;">${cfg.label}</span>`;
 }
 
-// Real OpenTable-scheduled closing time per day of week (Availability
-// Planning > Schedule, checked Aug 7, 2026). Sun=0 ... Sat=6.
 const DAY_CLOSING = ["8:45 PM","9:30 PM","9:30 PM","9:30 PM","10:00 PM","10:30 PM","10:30 PM"];
 function timeLabelToMinutes(label){
   const m = (label||"").match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
@@ -642,8 +588,6 @@ function timeLabelToMinutes(label){
   return h*60+min;
 }
 function closingLabelForHeaderDate(cfgKey){
-  // Prefer the day actually picked in the Date field (handles tabs like
-  // Weekday-4 that cover more than one real day, e.g. Thu AND Sun).
   const raw = STATE.header.date;
   if(raw){
     const d = new Date(raw+"T12:00:00");
@@ -659,14 +603,14 @@ function defaultClosingMinutesForTab(cfgKey){
 function parseClosingMinutes(cfgKey){
   const raw = (STATE.header.closing||"").trim();
   const m = raw.match(/^(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?$/);
-  if(!m) return defaultClosingMinutesForTab(cfgKey); // no manual entry -> use this tab's real scheduled closing
+  if(!m) return defaultClosingMinutesForTab(cfgKey);
   let h = parseInt(m[1],10), min = parseInt(m[2],10);
   const ap = (m[3]||"").toUpperCase();
   if(ap==="PM" && h!==12) h+=12;
   if(ap==="AM" && h===12) h=0;
-  if(!ap && h<12) h+=12; // bare "10:30" during dinner -> assume PM
+  if(!ap && h<12) h+=12;
   let total = h*60+min;
-  if(total < 16*60) total += 24*60; // past midnight
+  if(total < 16*60) total += 24*60;
   return total;
 }
 
@@ -679,9 +623,6 @@ function allTablesWithGuests(cfgKey, server){
 
 const BLOCK_LABELS = ["4:00-6:00 PM","6:00-8:00 PM","8:00 PM-Close"];
 function computeBlockTotals(cfgKey){
-  // Auto-calculated by bucketing every table's real seatings (reservations +
-  // walk-ins) into the 3 reporting windows by their actual clock time — purely
-  // a read-out for the chart/summary rows, never a data-entry surface.
   const cfg = CONFIGS[cfgKey];
   const totals = [0,0,0];
   const allTables = [];
@@ -694,11 +635,6 @@ function computeBlockTotals(cfgKey){
   return { labels: BLOCK_LABELS, totals, busiestIdx };
 }
 
-// "If the dining room stayed completely full all night" benchmark: for each
-// table with a known capacity, how many full-capacity turns fit between
-// opening and closing at the rule-of-thumb turn speed for that party size.
-// This is a theoretical ceiling (assumes every turn fills the table
-// completely), not a live prediction — labeled as such in the UI.
 function projectedFullHouseCovers(cfgKey){
   const cfg = CONFIGS[cfgKey];
   const closing = parseClosingMinutes(cfgKey);
@@ -722,7 +658,7 @@ function projectedFullHouseCovers(cfgKey){
 
 function computeAnalytics(cfgKey){
   const cfg = CONFIGS[cfgKey];
-  const shiftStart = 16*60; // 4:00 PM
+  const shiftStart = 16*60;
   const closing = parseClosingMinutes(cfgKey);
   const shiftMinutes = Math.max(closing - shiftStart, 60);
 
@@ -756,17 +692,12 @@ function computeAnalytics(cfgKey){
   const avgGuestPerServer = cfg.servers.length ? Math.round(allGuests/cfg.servers.length) : 0;
   const covers = projectedFullHouseCovers(cfgKey);
 
-  // Ideal distribution: sections are physically contiguous runs of tables
-  // (Server 1 covers one stretch of the room, Server 2 the next, etc.), so we
-  // only shift tables at the BOUNDARY between neighboring sections — never
-  // jump a table across the room just because the totals would balance.
-  // Split-table pairs (15/15A etc.) always move together as one unit.
   function buildUnits(tables){
     const units = [];
     for(let i=0;i<tables.length;i++){
       const t = tables[i];
       const ts = String(t);
-      if(/[A-Z]$/.test(ts)) continue; // consumed by its base table below
+      if(/[A-Z]$/.test(ts)) continue;
       const unit = [t];
       let j = i+1;
       while(j<tables.length && String(tables[j])===ts+"A"){ unit.push(tables[j]); j++; }
@@ -775,9 +706,6 @@ function computeAnalytics(cfgKey){
     }
     return units;
   }
-  // Pool tables (bar/patio) are a separate area with their own manual
-  // "currently suggested" hint below — leave whatever they're assigned to
-  // untouched here, just fold their guest counts into that server's ideal total.
   const poolBy = {}; cfg.servers.forEach(s=>poolBy[s.name]=0);
   const poolTablesBy = {}; cfg.servers.forEach(s=>poolTablesBy[s.name]=[]);
   POOL.forEach(p=>{
@@ -828,7 +756,7 @@ function computeAnalytics(cfgKey){
         <div class="val">${blockLabels[busiestBlockIdx]}</div>
         <div class="sub2">${blockTotals[busiestBlockIdx]} guests</div></div>
       <div class="metric"><div class="lbl">Actually Busiest Section</div>
-        <div class="val">${busiestSection && busiestSection.total>0 ? busiestSection.name : '—'}</div>
+        <div class="val">${busiestSection && busiestSection.total>0 ? getServerDisplayName(cfgKey,busiestSection.name) : '—'}</div>
         <div class="sub2">${busiestSection ? busiestSection.perTable.toFixed(1)+' guests/table' : ''}</div></div>
       <div class="metric"><div class="lbl">Average Guests per Server</div>
         <div class="val">${avgGuestPerServer}</div>
@@ -850,13 +778,13 @@ function computeAnalytics(cfgKey){
     <table class="ideal-table"><caption>Section Intensity Comparison (guests per table — actual intensity)</caption>
       <tr><th>Section</th><th>Table Count</th><th>Total Guests</th><th>Total Turns</th><th>Guests/Table</th></tr>
       ${rankedSections.map(r=>`<tr${r===busiestSection && r.total>0 ?' style="background:#fdf0e8"':''}>
-        <td class="left"><b>${r.name}</b></td><td>${r.tableCount}</td><td>${r.total}</td><td>${r.turns}</td><td><b>${r.perTable.toFixed(1)}</b></td>
+        <td class="left"><b>${getServerDisplayName(cfgKey,r.name)}</b></td><td>${r.tableCount}</td><td>${r.total}</td><td>${r.turns}</td><td><b>${r.perTable.toFixed(1)}</b></td>
       </tr>`).join("")}
     </table>
 
     <table class="ideal-table"><caption>Tables With a 2nd or 3rd Turn</caption>
       <tr><th>Section</th><th>Table</th><th>Turn Count</th></tr>
-      ${secondThirdTurn.length ? secondThirdTurn.map(r=>`<tr><td class="left">${r.server}</td><td>${r.table}</td><td><b>${r.turns}</b></td></tr>`).join("")
+      ${secondThirdTurn.length ? secondThirdTurn.map(r=>`<tr><td class="left">${getServerDisplayName(cfgKey,r.server)}</td><td>${r.table}</td><td><b>${r.turns}</b></td></tr>`).join("")
         : '<tr><td colspan="3" class="left" style="color:#888">No table has reached a 2nd turn yet</td></tr>'}
     </table>
 
@@ -867,17 +795,13 @@ function computeAnalytics(cfgKey){
         const ideal = idealLoad[s.name];
         const diff = ideal-cur;
         const diffHtml = diff===0 ? '0' : (diff>0? `<span class="diff-up">+${diff}</span>` : `<span class="diff-down">${diff}</span>`);
-        return `<tr><td class="left"><b>${s.name}</b></td><td class="left">${idealAssign[s.name].join(", ")||'—'}</td><td>${ideal}</td><td>${cur}</td><td>${diffHtml}</td></tr>`;
+        return `<tr><td class="left"><b>${getServerDisplayName(cfgKey,s.name)}</b></td><td class="left">${idealAssign[s.name].join(", ")||'—'}</td><td>${ideal}</td><td>${cur}</td><td>${diffHtml}</td></tr>`;
       }).join("")}
     </table>
   </div>`;
   return html;
 }
 
-// Table-level walk-in placement: match party size to an open table's real
-// capacity (where known), then break ties by favoring the least-loaded
-// section — so the busiest server stops getting new parties until the
-// others catch up, and nobody gets seated at a table that's the wrong size.
 function bestTableForParty(cfgKey, partySize){
   const cfg = CONFIGS[cfgKey];
   const size = Number(partySize) || 0;
@@ -885,17 +809,17 @@ function bestTableForParty(cfgKey, partySize){
   cfg.servers.forEach(s=>{
     const { total: serverLoad } = serverTotal(cfgKey, s);
     s.tables.forEach(t=>{
-      if(guestTotal(cfgKey,t) > 0) return; // occupied
+      if(guestTotal(cfgKey,t) > 0) return;
       candidates.push({ table:t, server:s.name, serverLoad, cap:tableCapacity(t) });
     });
   });
   if(!candidates.length) return { none:true };
   const scored = candidates.map(c=>{
     let fitScore, overflow=false;
-    if(!size || !c.cap) fitScore = 5; // no party size entered yet, or capacity unknown
-    else if(size>=c.cap.min && size<=c.cap.max) fitScore = 0; // perfect fit
-    else if(size < c.cap.min) fitScore = (c.cap.min-size)*2; // bigger table than needed
-    else { fitScore = (size-c.cap.max)*3; overflow = true; } // too small
+    if(!size || !c.cap) fitScore = 5;
+    else if(size>=c.cap.min && size<=c.cap.max) fitScore = 0;
+    else if(size < c.cap.min) fitScore = (c.cap.min-size)*2;
+    else { fitScore = (size-c.cap.max)*3; overflow = true; }
     return { ...c, fitScore, overflow };
   });
   const feasible = scored.filter(c=>!c.overflow);
@@ -909,9 +833,6 @@ function setWalkinPartySize(v){
   renderAll();
 }
 function capLabelFor(cap){ return cap ? (cap.min===cap.max ? `${cap.max}-top` : `${cap.min}-${cap.max}-top`) : "capacity unknown"; }
-// One click logs the walk-in at the recommended table with the current
-// clock time — the same "Table X, now, N guests" a hostess would type into
-// OpenTable herself. Falls back to a prompt if no party size is set yet.
 function seatWalkinAtBest(cfgKey){
   const size = Number(STATE.walkinPartySize) || 0;
   const rec = bestTableForParty(cfgKey, size);
@@ -925,14 +846,14 @@ function renderWalkinRecommendation(cfgKey){
   const rec = bestTableForParty(cfgKey, size);
   if(rec.none) return { msg: `Every table in every section is currently seated — no open table to suggest right now.`, table: null };
   const b = rec.best;
-  let msg = `<b style="font-size:14px;color:var(--navy);">Table ${b.table}</b> (${capLabelFor(b.cap)}, ${b.server}, currently ${b.serverLoad} guests)`;
+  let msg = `<b style="font-size:14px;color:var(--navy);">Table ${b.table}</b> (${capLabelFor(b.cap)}, ${getServerDisplayName(cfgKey,b.server)}, currently ${b.serverLoad} guests)`;
   if(size && b.cap && b.overflow){
     msg += ` <span style="color:#a32d2d;">— every open table is smaller than ${size}; this is the closest option</span>`;
   } else if(size && b.cap && size < b.cap.min){
     msg += ` <span style="color:#888;">— nothing smaller open right now</span>`;
   }
   if(rec.alternatives && rec.alternatives.length){
-    msg += `<br><span style="color:#888;">Other options: ${rec.alternatives.map(a=>`Table ${a.table} (${capLabelFor(a.cap)}, ${a.server})`).join(", ")}</span>`;
+    msg += `<br><span style="color:#888;">Other options: ${rec.alternatives.map(a=>`Table ${a.table} (${capLabelFor(a.cap)}, ${getServerDisplayName(cfgKey,a.server)})`).join(", ")}</span>`;
   }
   return { msg, table: b.table };
 }
@@ -955,7 +876,8 @@ function renderPanel(cfgKey){
     const g1 = serverBlockTotal(cfgKey, s.name, 0);
     const g2 = serverBlockTotal(cfgKey, s.name, 1);
     const g3 = serverBlockTotal(cfgKey, s.name, 2);
-    html += `<tr class="${st.cls}"><td class="left"><b>${s.name}</b></td><td class="left">${s.tables.join(", ")}</td>
+    const dispName = getServerDisplayName(cfgKey, s.name);
+    html += `<tr class="${st.cls}"><td class="left"><input type="text" class="notes" style="font-weight:bold;min-width:110px;" placeholder="${s.name}" value="${dispName===s.name?'':String(dispName).replace(/"/g,'&quot;')}" onchange="setServerDisplayName('${cfgKey}',${jsStr(s.name)},this.value)"></td><td class="left">${s.tables.join(", ")}</td>
       <td>${g1}</td><td>${g2}</td><td>${g3}</td><td><b>${total}</b></td><td>${turns}</td><td><b>${st.label}</b></td></tr>`;
   });
   html += `</table>`;
@@ -974,7 +896,7 @@ function renderPanel(cfgKey){
       <span>to</span>
       <select id="ra_server_${cfgKey}" style="padding:4px;border:1px solid var(--border);border-radius:3px;">
         <option value="">Server…</option>
-        ${cfg.servers.map(s=>`<option value="${s.name}">${s.name}</option>`).join("")}
+        ${cfg.servers.map(s=>`<option value="${s.name}">${getServerDisplayName(cfgKey,s.name)}</option>`).join("")}
       </select>
       <button class="action" style="padding:4px 10px;font-size:11px;" onclick="addReassignmentFromForm('${cfgKey}')">Apply</button>
     </div>
@@ -1001,8 +923,9 @@ function renderPanel(cfgKey){
   </table>`;
 
   cfg.servers.forEach(s=>{
-    html += `<table><caption>${s.name.toUpperCase()} — GUEST COUNT BY TABLE</caption>
-      <tr><th>Table</th><th>Cap.</th><th>Seatings Tonight</th><th></th><th>Total Guests</th><th>Turns</th><th>Est. Free</th><th>Area</th><th>Split Table</th><th>Assigned Server</th><th>Notes</th></tr>`;    s.tables.forEach(t=>{ html += renderTableRow(cfgKey, t, "DINING ROOM", s.tables, s.name, false); });
+    html += `<table><caption>${getServerDisplayName(cfgKey,s.name).toUpperCase()} — GUEST COUNT BY TABLE</caption>
+      <tr><th>Table</th><th>Cap.</th><th>Seatings Tonight</th><th></th><th>Total Guests</th><th>Turns</th><th>Est. Free</th><th>Area</th><th>Split Table</th><th>Assigned Server</th><th>Notes</th></tr>`;
+    s.tables.forEach(t=>{ html += renderTableRow(cfgKey, t, "DINING ROOM", s.tables, getServerDisplayName(cfgKey,s.name), false); });
     const sg1 = serverBlockTotal(cfgKey, s.name, 0), sg2 = serverBlockTotal(cfgKey, s.name, 1), sg3 = serverBlockTotal(cfgKey, s.name, 2);
     const {total: sTotal, turns: sTurns} = serverTotal(cfgKey, s);
     html += `<tr style="background:#eef1f7;font-weight:600;">
@@ -1017,17 +940,16 @@ function renderPanel(cfgKey){
     const outgoing = (STATE.reassign[cfgKey]||[]).filter(r=>defaultOwnerOfTable(cfgKey,r.table)===s.name && r.toServer!==s.name);
     if(incoming.length || outgoing.length){
       html += `<div class="sub2" style="margin:-8px 0 14px 4px;color:#888;">`;
-      if(incoming.length) html += `<span class="suggest">In:</span> ${incoming.map(r=>`Table ${r.table} (${r.time}, from ${defaultOwnerOfTable(cfgKey,r.table)})`).join(", ")}`;
+      if(incoming.length) html += `<span class="suggest">In:</span> ${incoming.map(r=>`Table ${r.table} (${r.time}, from ${getServerDisplayName(cfgKey,defaultOwnerOfTable(cfgKey,r.table))})`).join(", ")}`;
       if(incoming.length && outgoing.length) html += ` &nbsp;·&nbsp; `;
-      if(outgoing.length) html += `<span class="suggest">Out:</span> ${outgoing.map(r=>`Table ${r.table} (${r.time}, to ${r.toServer})`).join(", ")}`;
+      if(outgoing.length) html += `<span class="suggest">Out:</span> ${outgoing.map(r=>`Table ${r.table} (${r.time}, to ${getServerDisplayName(cfgKey,r.toServer)})`).join(", ")}`;
       html += `</div>`;
     }
   });
 
-  // suggested server for pool = lowest current total
   const totals = cfg.servers.map(s=>({name:s.name, total:serverTotal(cfgKey,s).total}));
   totals.sort((a,b)=>a.total-b.total);
-  const suggested = totals[0]?.name || "-";
+  const suggested = totals[0] ? getServerDisplayName(cfgKey,totals[0].name) : "-";
 
   html += `<table><caption>BAR 25-29 AND PATIO 30-34 — ASSIGN TO THE SERVER WITH THE LOWEST CURRENT LOAD
       <span class="suggest">(currently suggested: ${suggested})</span></caption>
@@ -1087,10 +1009,6 @@ function renderHistoryPanel(){
   return html;
 }
 
-// Static snapshot pulled from OpenTable GuestCenter (see RESERVATIONS_TODAY
-// above) — informational only, sorted by time. The hostess matches these to
-// tables herself; nothing here auto-blocks a table, since OpenTable's own
-// table assignment can change up until the guest actually arrives.
 function renderReservationsPanel(cfgKey){
   const key = (cfgKey && CONFIGS[cfgKey]) ? cfgKey : (CONFIGS[currentTab] ? currentTab : "weekend6");
   const r = RESERVATIONS_TODAY;
@@ -1201,20 +1119,12 @@ function renderTabs(){
 
 function updateClosingPlaceholder(){
   const el = document.getElementById("f_closing");
-  const cfg = CONFIGS[currentTab];  if(el && cfg) el.placeholder = `e.g. ${closingLabelForHeaderDate(currentTab)} (typical ${cfg.days})`;
+  const cfg = CONFIGS[currentTab];
+  if(el && cfg) el.placeholder = `e.g. ${closingLabelForHeaderDate(currentTab)} (typical ${cfg.days})`;
 }
 
 function todayStr(){ return new Date().toISOString().slice(0,10); }
 
-// A new calendar day should start clean. The Date field is what drives this:
-// if the tool is opened on a different date than what was last saved, every
-// table's guest counts/notes/assignments and the shift-specific header
-// fields (Hostess/Manager/Captain/Closing/Weather/Service/Patio) wipe
-// automatically — nobody has to remember to press "New Shift". This runs
-// once, silently, at page load, before anything is rendered.
-// Snapshots a finished day's numbers into STATE.history before they get
-// wiped, so nothing is actually lost — it just moves from the live tables
-// into the History tab. Skips saving if that day never had any data entered.
 function archiveDay(dateKey){
   if(!dateKey) return;
   if(!STATE.history) STATE.history = {};
@@ -1254,9 +1164,6 @@ function bindHeader(){
     const el = document.getElementById("f_"+f);
     el.value = STATE.header[f] || "";
     if(f==="date"){
-      // Manual date changes mid-shift also clear the tables, but only after
-      // confirming — this protects against wiping tonight's numbers by accident.
-      // Whatever was entered gets archived to the History tab first either way.
       el.addEventListener("change", ()=>{
         const newVal = el.value, oldVal = STATE.header.date;
         const hasData = Object.keys(STATE.data).length>0;
@@ -1305,15 +1212,16 @@ document.getElementById("btn-export").addEventListener("click", ()=>{
   const cfg = CONFIGS[currentTab];
   const rows = [["Section","Table","Seatings Tonight","Total Guests","Turns","Area","Split","Assigned Server","Notes"]];
   cfg.servers.forEach(s=>{
+    const dispName = getServerDisplayName(currentTab, s.name);
     s.tables.forEach(t=>{
-      rows.push([s.name, t, seatingsCsvStr(currentTab,t),
-        guestTotal(currentTab,t), turnCount(currentTab,t), "DINING ROOM", isSplit(t,s.tables)?"YES":"", s.name, getVal(currentTab,t,'notes')||""]);
+      rows.push([dispName, t, seatingsCsvStr(currentTab,t),
+        guestTotal(currentTab,t), turnCount(currentTab,t), "DINING ROOM", isSplit(t,s.tables)?"YES":"", dispName, getVal(currentTab,t,'notes')||""]);
     });
   });
   POOL.forEach(p=>{
     const assign = getVal(currentTab,p.t,'assign');
     rows.push(["POOL", p.t, seatingsCsvStr(currentTab,p.t),
-      guestTotal(currentTab,p.t), turnCount(currentTab,p.t), p.area, "", assign||"", getVal(currentTab,p.t,'notes')||""]);
+      guestTotal(currentTab,p.t), turnCount(currentTab,p.t), p.area, "", assign?getServerDisplayName(currentTab,assign):"", getVal(currentTab,p.t,'notes')||""]);
   });
   rows.push([]);
   rows.push(["Date",STATE.header.date||"","Hostess",STATE.header.hostess||"","Manager",STATE.header.manager||"","Captain",STATE.header.captain||""]);
