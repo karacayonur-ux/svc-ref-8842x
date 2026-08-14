@@ -431,6 +431,7 @@ if(!STATE.data) STATE.data = {};
 if(!STATE.history) STATE.history = {};
 if(!STATE.walkins) STATE.walkins = {};
 if(!STATE.serverNames) STATE.serverNames = {};
+if(!STATE.tableSection) STATE.tableSection = {};
 
 // Lets a hostess type the real server's name over the generic "Server 1"
 // label for tonight, without touching any of the internal keys (assign
@@ -523,6 +524,43 @@ function defaultOwnerOfTable(cfgKey, table){
   return found ? found.name : null;
 }
 
+// Whole-table section moves for tonight only — lets the hostess get ahead of
+// an uneven night by handing a table to a different server before it ever
+// becomes a live-reassignment scramble. Distinct from the per-seating "Live
+// Reassignments" below: moving a table here applies to every seating on it,
+// including ones logged AFTER the move (a walk-in seated at a moved table
+// counts toward its new server automatically). Resets with everything else
+// on "New Shift" / a new calendar day — it never touches CONFIGS itself, so
+// tomorrow the section map is back to normal without anyone undoing it.
+function tableSectionOverride(cfgKey, table){
+  const m = STATE.tableSection && STATE.tableSection[cfgKey];
+  return (m && m[String(table)]) || null;
+}
+function effectiveTableOwner(cfgKey, table){
+  return tableSectionOverride(cfgKey, table) || defaultOwnerOfTable(cfgKey, table);
+}
+function moveTableToServer(cfgKey, table, toServer){
+  const cfg = CONFIGS[cfgKey];
+  if(!cfg) return;
+  const t = String(table);
+  const def = defaultOwnerOfTable(cfgKey, t);
+  if(!STATE.tableSection) STATE.tableSection = {};
+  if(!STATE.tableSection[cfgKey]) STATE.tableSection[cfgKey] = {};
+  if(toServer && toServer !== def){
+    STATE.tableSection[cfgKey][t] = toServer;
+  } else {
+    delete STATE.tableSection[cfgKey][t];
+  }
+  // A table-level move supersedes any one-off per-seating reassignments
+  // already sitting on this table tonight, so the two mechanisms never
+  // contradict each other in the Load Summary.
+  if(STATE.reassign[cfgKey]){
+    STATE.reassign[cfgKey] = STATE.reassign[cfgKey].filter(r=>String(r.table)!==t);
+  }
+  saveState(STATE);
+  renderAll();
+}
+
 // Matched by seatId AND table together — a reservation's seatId (res_N) is
 // just its position in tonight's pulled list, so if the list is ever
 // re-pulled (new counts, a new day) that same id can land on a completely
@@ -533,8 +571,8 @@ function seatOwnerServer(cfgKey, table, seatId){
   const list = STATE.reassign[cfgKey] || [];
   const hit = list.find(r=>r.seatId===seatId && String(r.table)===String(table));
   if(hit) return hit.toServer;
-  const def = defaultOwnerOfTable(cfgKey, table);
-  if(def) return def;
+  const eff = effectiveTableOwner(cfgKey, table);
+  if(eff) return eff;
   return getVal(cfgKey, table, "assign") || null; // pool tables, whole-night assign
 }
 
@@ -603,22 +641,32 @@ function serverBlockTotal(cfgKey, serverName, blockIdx){
   return sum;
 }
 
-function renderTableRow(cfgKey, table, area, list, assignedServer, showAssign){
+function renderTableRow(cfgKey, table, area, list, assignedServer, mode){
   const total = guestTotal(cfgKey, table);
   const turns = turnCount(cfgKey, table);
   const split = list ? isSplit(table, list) : false;
   const notes = getVal(cfgKey, table, "notes");
-  const assignVal = getVal(cfgKey, table, "assign");
   const cap = tableCapacity(table);
   const capLabel = cap ? (cap.min===cap.max ? `${cap.max}` : `${cap.min}-${cap.max}`) : "—";
   const freeMin = expectedFreeMinutes(cfgKey, table);
   const freeLabel = freeMin===null ? "—" : `~${minutesToLabel(freeMin)}`;
   let assignCell;
-  if(showAssign){
+  if(mode === "pool"){
+    const assignVal = getVal(cfgKey, table, "assign");
     const cfg = CONFIGS[cfgKey];
     const opts = cfg.servers.map(s=>`<option value="${s.name}" ${assignVal===s.name?"selected":""}>${getServerDisplayName(cfgKey,s.name)}</option>`).join("");
     assignCell = `<select class="assign" onchange="setVal('${cfgKey}',${jsStr(table)},'assign',this.value);renderAll();">
       <option value="">-</option>${opts}</select>`;
+  } else if(mode === "section"){
+    // Lets the hostess move this whole table to a different server for
+    // tonight, right from its own row — the same whole-table move offered as
+    // a one-click button in the Ideal Section Distribution table below.
+    const cfg = CONFIGS[cfgKey];
+    const def = defaultOwnerOfTable(cfgKey, table);
+    const eff = effectiveTableOwner(cfgKey, table);
+    const opts = cfg.servers.map(s=>`<option value="${s.name}" ${eff===s.name?"selected":""}>${getServerDisplayName(cfgKey,s.name)}${s.name===def?" (default)":""}</option>`).join("");
+    const movedTag = eff!==def ? ` <span class="suggest">moved</span>` : "";
+    assignCell = `<select class="assign" onchange="moveTableToServer('${cfgKey}',${jsStr(table)},this.value)">${opts}</select>${movedTag}`;
   } else {
     assignCell = assignedServer;
   }
@@ -849,8 +897,9 @@ function computeIdealDistribution(cfgKey){
 // shown in the Ideal Section Distribution table).
 function applyIdealRebalance(cfgKey){
   const cfg = CONFIGS[cfgKey];
-  if(!confirm(`Apply the suggested rebalance for ${cfg.label}?\n\nThis moves the seatings on any table that changed sections to its new suggested server, replacing any live reassignments already active on this tab tonight.`)) return;
+  if(!confirm(`Apply the suggested rebalance for ${cfg.label}?\n\nThis moves the seatings on any table that changed sections to its new suggested server, replacing any live reassignments already active on this tab tonight. Any individual tables already moved by hand (Section dropdown) are cleared first so the two don't conflict.`)) return;
   const { unitAssign } = computeIdealDistribution(cfgKey);
+  STATE.tableSection[cfgKey] = {}; // start from the structural baseline, same as the suggestion did
   const newList = [];
   Object.entries(unitAssign).forEach(([serverName, tables])=>{
     tables.forEach(t=>{
@@ -954,7 +1003,13 @@ function computeAnalytics(cfgKey){
         const ideal = idealLoad[s.name];
         const diff = ideal-cur;
         const diffHtml = diff===0 ? '0' : (diff>0? `<span class="diff-up">+${diff}</span>` : `<span class="diff-down">${diff}</span>`);
-        return `<tr><td class="left"><b>${getServerDisplayName(cfgKey,s.name)}</b></td><td class="left">${idealAssign[s.name].join(", ")||'—'}</td><td>${ideal}</td><td>${cur}</td><td>${diffHtml}</td></tr>`;
+        // Tables the algorithm suggests for this section that aren't here yet
+        // (by either the structural default or an already-applied table
+        // move) get a one-click "Move here" button — the same whole-table
+        // move offered by the Section dropdown on each table row.
+        const moves = (idealAssign[s.name]||[]).filter(t=>defaultOwnerOfTable(cfgKey,t)!==s.name && effectiveTableOwner(cfgKey,t)!==s.name);
+        const moveHtml = moves.length ? `<div class="sub2" style="margin-top:4px;">${moves.map(t=>`Table ${t} <button class="action" style="padding:2px 6px;font-size:10.5px;" onclick="moveTableToServer('${cfgKey}',${jsStr(t)},'${s.name}')">Move here</button>`).join(" &nbsp; ")}</div>` : '';
+        return `<tr><td class="left"><b>${getServerDisplayName(cfgKey,s.name)}</b></td><td class="left">${idealAssign[s.name].join(", ")||'—'}${moveHtml}</td><td>${ideal}</td><td>${cur}</td><td>${diffHtml}</td></tr>`;
       }).join("")}
     </table>
   </div>`;
@@ -1091,7 +1146,7 @@ function renderPanel(cfgKey){
   cfg.servers.forEach(s=>{
     html += `<table><caption>${getServerDisplayName(cfgKey,s.name).toUpperCase()} — GUEST COUNT BY TABLE</caption>
       <tr><th>Table</th><th>Cap.</th><th>Seatings Tonight</th><th></th><th>Total Guests</th><th>Turns</th><th>Est. Free</th><th>Area</th><th>Split Table</th><th>Assigned Server</th><th>Notes</th></tr>`;
-    s.tables.forEach(t=>{ html += renderTableRow(cfgKey, t, "DINING ROOM", s.tables, getServerDisplayName(cfgKey,s.name), false); });
+        s.tables.forEach(t=>{ html += renderTableRow(cfgKey, t, "DINING ROOM", s.tables, getServerDisplayName(cfgKey,s.name), "section"); });
     const sg1 = serverBlockTotal(cfgKey, s.name, 0), sg2 = serverBlockTotal(cfgKey, s.name, 1), sg3 = serverBlockTotal(cfgKey, s.name, 2);
     const {total: sTotal, turns: sTurns} = serverTotal(cfgKey, s);
     html += `<tr style="background:#eef1f7;font-weight:600;">
@@ -1102,10 +1157,14 @@ function renderPanel(cfgKey){
       <td colspan="5"></td>
     </tr>`;
     html += `</table>`;
-    const incoming = (STATE.reassign[cfgKey]||[]).filter(r=>r.toServer===s.name && defaultOwnerOfTable(cfgKey,r.table)!==s.name);
+        const incoming = (STATE.reassign[cfgKey]||[]).filter(r=>r.toServer===s.name && defaultOwnerOfTable(cfgKey,r.table)!==s.name);
     const outgoing = (STATE.reassign[cfgKey]||[]).filter(r=>defaultOwnerOfTable(cfgKey,r.table)===s.name && r.toServer!==s.name);
-    if(incoming.length || outgoing.length){
+    const tableMovesIn = Object.entries((STATE.tableSection && STATE.tableSection[cfgKey]) || {}).filter(([t,toServer])=>toServer===s.name);
+    const tableMovesOut = Object.entries((STATE.tableSection && STATE.tableSection[cfgKey]) || {}).filter(([t])=>defaultOwnerOfTable(cfgKey,t)===s.name);
+    if(incoming.length || outgoing.length || tableMovesIn.length || tableMovesOut.length){
       html += `<div class="sub2" style="margin:-8px 0 14px 4px;color:#888;">`;
+      if(tableMovesIn.length) html += `<span class="suggest">Table moved in:</span> ${tableMovesIn.map(([t])=>`Table ${t} (from ${getServerDisplayName(cfgKey,defaultOwnerOfTable(cfgKey,t))})`).join(", ")}<br>`;
+      if(tableMovesOut.length) html += `<span class="suggest">Table moved out:</span> ${tableMovesOut.map(([t,toServer])=>`Table ${t} (to ${getServerDisplayName(cfgKey,toServer)})`).join(", ")}<br>`;
       if(incoming.length) html += `<span class="suggest">In:</span> ${incoming.map(r=>`Table ${r.table} (${r.time}, from ${getServerDisplayName(cfgKey,defaultOwnerOfTable(cfgKey,r.table))})`).join(", ")}`;
       if(incoming.length && outgoing.length) html += ` &nbsp;·&nbsp; `;
       if(outgoing.length) html += `<span class="suggest">Out:</span> ${outgoing.map(r=>`Table ${r.table} (${r.time}, to ${getServerDisplayName(cfgKey,r.toServer)})`).join(", ")}`;
@@ -1121,7 +1180,7 @@ function renderPanel(cfgKey){
   html += `<table><caption>BAR 25-29 AND PATIO 30-34 — ASSIGN TO THE SERVER WITH THE LOWEST CURRENT LOAD
       <span class="suggest">(currently suggested: ${suggested})</span></caption>
       <tr><th>Table</th><th>Cap.</th><th>Seatings Tonight</th><th></th><th>Total Guests</th><th>Turns</th><th>Est. Free</th><th>Area</th><th>Split</th><th>Assigned Server</th><th>Notes</th></tr>`;
-  POOL.forEach(p=>{ html += renderTableRow(cfgKey, p.t, p.area, null, "", true); });
+    POOL.forEach(p=>{ html += renderTableRow(cfgKey, p.t, p.area, null, "", "pool"); });
   html += `</table>`;
 
   html += computeAnalytics(cfgKey);
@@ -1329,7 +1388,8 @@ function checkNewDay(){
     STATE.data = {};
     STATE.walkins = {};
     STATE.reassign = {};
-    STATE.header = { date: today };
+          STATE.tableSection = {};
+      STATE.header = { date: today };
     saveState(STATE);
   } else if(!saved){
     STATE.header.date = today;
@@ -1356,7 +1416,8 @@ function bindHeader(){
           archiveDay(oldVal);
           STATE.data = {};
           STATE.walkins = {};
-          STATE.reassign = {};
+                  STATE.reassign = {};
+        STATE.tableSection = {};
         }
         STATE.header.date = newVal;
         saveState(STATE);
@@ -1371,10 +1432,11 @@ function bindHeader(){
 }
 
 document.getElementById("btn-reset").addEventListener("click", ()=>{
-  if(confirm("Reset all logged walk-ins, notes, pool assignments, and live reassignments? (Reservations stay — they come from OpenTable, not from here.)")){
+    if(confirm("Reset all logged walk-ins, notes, pool assignments, section moves, and live reassignments? (Reservations stay — they come from OpenTable, not from here.)")){
     STATE.data = {};
     STATE.walkins = {};
     STATE.reassign = {};
+    STATE.tableSection = {};
     saveState(STATE);
     renderAll();
   }
@@ -1394,9 +1456,9 @@ function seatingsCsvStr(cfgKey, table){
 document.getElementById("btn-export").addEventListener("click", ()=>{
   const cfg = CONFIGS[currentTab];
   const rows = [["Section","Table","Seatings Tonight","Total Guests","Turns","Area","Split","Assigned Server","Notes"]];
-  cfg.servers.forEach(s=>{
-    const dispName = getServerDisplayName(currentTab, s.name);
+    cfg.servers.forEach(s=>{
     s.tables.forEach(t=>{
+      const dispName = getServerDisplayName(currentTab, effectiveTableOwner(currentTab, t) || s.name);
       rows.push([dispName, t, seatingsCsvStr(currentTab,t),
         guestTotal(currentTab,t), turnCount(currentTab,t), "DINING ROOM", isSplit(t,s.tables)?"YES":"", dispName, getVal(currentTab,t,'notes')||""]);
     });
