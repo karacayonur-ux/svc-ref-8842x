@@ -140,8 +140,8 @@ const CONFIGS = {
   weekday4: { label:"Weekday - 4 Server", days:"Thu & Sun", closing:"10:00 PM", servers:[
     {name:"Server 1", tables:[1,2,3,4,5,12,13]},
     {name:"Server 2", tables:[6,7,8,9,10,11]},
-    {name:"Server 3", tables:[14,15,21,22,23,24]},
-    {name:"Server 4", tables:[16,17,18,19,20]},
+     {name:"Server 3", tables:[14,15,"15A",21,22,23,24]},
+     {name:"Server 4", tables:[16,"16A",17,"17A",18,19,"19A",20]},
   ]},
   weekend6: { label:"Weekend - 6 Server", days:"Fri–Sat", closing:"10:30 PM", servers:[
     {name:"Server 1", tables:[1,2,3,4,5]},
@@ -409,6 +409,99 @@ if(!STATE.history) STATE.history = {};
 if(!STATE.walkins) STATE.walkins = {};
 if(!STATE.serverNames) STATE.serverNames = {};
 if(!STATE.tableSection) STATE.tableSection = {};
+     function parseTableList(str){
+  return String(str||"").split(/[,\/\s]+/).map(s=>s.trim()).filter(Boolean)
+    .map(s=>/^\d+$/.test(s) ? Number(s) : s);
+}
+// Custom Section builder: lets tonight's sections be drawn up freely instead
+// of picking one of the 3 fixed presets, a manager types in server names
+// and which tables belong to each, the same loose way it'd be written on a
+// sticky note. First-run default below mirrors the actual paper section
+// chart tonight so numbers are visible immediately without retyping it.
+if(!STATE.customSections){
+  STATE.customSections = [
+    {name:"Dana", tables:[1,2,3,4,5]},
+    {name:"Mehmet", tables:[6,7,8,9,10]},
+    {name:"Anoo", tables:[11,12,13,14]},
+    {name:"Ilker", tables:[15,"15A",16,"16A",17,"17A"]},
+    {name:"Lily", tables:[18,19,"19A",20,30]},
+    {name:"Lucy", tables:[21,22,23,24]},
+  ];
+  [25,26,27,28,29].forEach(t=>{ STATE.data[`custom__${t}__assign`] = "Lucy"; });
+}
+// Rebuilds CONFIGS.custom from STATE.customSections so every existing
+// function that already works off CONFIGS[cfgKey] works for the custom tab
+// with zero changes.
+function syncCustomConfig(){
+  CONFIGS.custom = {
+    label: "Custom - Tonight",
+    days: "Custom",
+    closing: (CONFIGS.weekday3 && CONFIGS.weekday3.closing) || "10:00 PM",
+    servers: (STATE.customSections||[]).filter(s=>s && s.name).map(s=>({ name:s.name, tables:s.tables||[] })),
+  };
+}
+syncCustomConfig();
+
+function addCustomSection(){
+  if(!STATE.customSections) STATE.customSections = [];
+  STATE.customSections.push({ name:`Server ${STATE.customSections.length+1}`, tables:[] });
+  syncCustomConfig();
+  saveState(STATE);
+  renderAll();
+}
+function removeCustomSection(i){
+  STATE.customSections.splice(i,1);
+  syncCustomConfig();
+  saveState(STATE);
+  renderAll();
+}
+function updateCustomSectionName(i,val){
+  const v = (val||"").trim();
+  STATE.customSections[i].name = v || `Server ${i+1}`;
+  syncCustomConfig();
+  saveState(STATE);
+  renderAll();
+}
+function updateCustomSectionTables(i,val){
+  STATE.customSections[i].tables = parseTableList(val);
+  syncCustomConfig();
+  saveState(STATE);
+  renderAll();
+}
+// Editable roster shown at the top of the Custom tab, plus a duplicate-table
+// warning so a table listed under two servers doesn't silently get
+// double-counted.
+function renderCustomEditor(){
+  const sections = STATE.customSections || [];
+  const seenAt = {};
+  const dupWarnings = [];
+  sections.forEach((s,i)=>{
+    (s.tables||[]).forEach(t=>{
+      const key = String(t);
+      if(seenAt[key]!==undefined && seenAt[key]!==i){
+        dupWarnings.push(`Table ${key}: listed under both "${sections[seenAt[key]].name}" and "${s.name}" - it should only be in one, otherwise totals will be wrong.`);
+      } else {
+        seenAt[key]=i;
+      }
+    });
+  });
+  let html = `<div class="dash" style="margin-bottom:14px;">
+    <h2>Tonight's Custom Sections</h2>
+    <div class="sub2" style="margin-bottom:10px;color:#888;">Add/remove servers, type which tables belong to each (comma or / separated, e.g. 1,2,3,4,5 or 15,15A,16,16A). The load summary, hourly intensity, and Analytics below all calculate automatically from this. Bar/Patio (25-34) is still assigned from the BAR/PATIO table below as usual.</div>
+    ${dupWarnings.length ? `<div style="background:#f8d7da;border:1px solid #c00;color:#5a0000;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:10px;">${dupWarnings.join("<br>")}</div>` : ''}
+    <table><caption>SERVER - TABLES</caption>
+    <tr><th>Server</th><th>Tables</th><th></th></tr>
+    ${sections.map((s,i)=>`<tr>
+      <td class="left"><input type="text" class="notes" style="font-weight:bold;min-width:100px;" value="${String(s.name).replace(/"/g,'&quot;')}" onchange="updateCustomSectionName(${i},this.value)"></td>
+      <td class="left"><input type="text" class="notes" style="min-width:260px;" value="${(s.tables||[]).join(', ')}" onchange="updateCustomSectionTables(${i},this.value)"></td>
+      <td><button class="action" style="padding:3px 8px;font-size:11px;" onclick="removeCustomSection(${i})">Remove</button></td>
+    </tr>`).join("") || `<tr><td colspan="3" class="left" style="color:#888;">No servers added yet.</td></tr>`}
+    </table>
+    <button class="action" style="margin-top:8px;" onclick="addCustomSection()">+ Add Server</button>
+  </div>`;
+  return html;
+}
+
 
 // Lets a hostess type the real server's name over the generic "Server 1"
 // label for tonight, without touching any of the internal keys (assign
@@ -1059,7 +1152,8 @@ function renderWalkinRecommendation(cfgKey){
 function renderPanel(cfgKey){
   const cfg = CONFIGS[cfgKey];
   const rec = renderWalkinRecommendation(cfgKey);
-  let html = `<div class="dash" style="margin-bottom:14px;padding:10px 14px;">
+    let html = cfgKey==='custom' ? renderCustomEditor() : '';
+       html += `<div class="dash" style="margin-bottom:14px;padding:10px 14px;">
     <h2 style="margin:0 0 6px;">🚶 Next Walk-in Should Go To</h2>
     <div class="sub2" style="margin-bottom:8px;">Party size: <input type="number" min="1" max="20" value="${STATE.walkinPartySize||''}" style="width:56px;padding:3px;border:1px solid var(--border);border-radius:3px;text-align:center;" onchange="setWalkinPartySize(this.value)"> <span style="color:#888;">(leave blank to just see who's lightest-loaded)</span>
       ${rec.table ? `<button class="action" style="padding:4px 10px;font-size:11px;margin-left:8px;" onclick="seatWalkinAtBest('${cfgKey}')">Seat here now</button>` : ''}</div>
@@ -1278,7 +1372,8 @@ function renderReservationsPanel(cfgKey){
 }
 
 function renderAll(){
-  const panels = document.getElementById("panels");
+  syncCustomConfig();
+     const panels = document.getElementById("panels");
   panels.innerHTML = "";
   Object.keys(CONFIGS).forEach(key=>{
     const div = document.createElement("div");
