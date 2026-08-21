@@ -904,59 +904,89 @@ function projectedFullHouseCovers(cfgKey){
   return { total, countedTables, unknownTables };
 }
 
-// Ideal distribution: every table (split pairs like 15/15A always move
-     // together as one unit) is packed into whichever server currently has the
-     // lightest total, largest parties first (a standard greedy balancing
-     // heuristic) — this optimizes purely for even guest counts across servers,
-     // and WILL move a table away from its usual neighbors/section if that's
-     // what it takes to close a big gap (e.g. Server 1 vs Server 5). Pool tables
+// Ideal distribution: the floor is one physical left-to-right sequence of
+     // tables (matching the section order above), and split pairs like 15/15A
+     // always move together as one unit. This finds the split points that divide
+     // that sequence into exactly N contiguous, walkable runs — one per server —
+     // that come closest to an even guest count (least total squared deviation
+     // from the average). Because it optimizes across the whole floor at once
+     // instead of swapping one neighbor pair at a time, a big gap between, say,
+     // Server 1 and Server 5 gets closed by shifting boundaries through the
+     // servers in between, not just the one next to it — but no server ever ends
+     // up with tables scattered outside its own stretch of the room. Pool tables
      // (bar/patio) are left exactly as currently assigned — their guest counts
-     // are added on top as a fixed starting load per server before the packing
-     // runs, so the final numbers stay balanced including pool guests too.
-     // Shared by the read-only Analytics table and the one-click "Apply
-     // Suggested Rebalance" button (unitAssign excludes pool tables, since pool
-     // assignments are manual and shouldn't be touched by the rebalance).
+     // are added on top as a fixed starting load per server before the split
+     // points are chosen, so the final numbers stay balanced including pool
+     // guests too. Shared by the read-only Analytics table and the one-click
+     // "Apply Suggested Rebalance" button (unitAssign excludes pool tables, since
+     // pool assignments are manual and shouldn't be touched by the rebalance).
      function computeIdealDistribution(cfgKey){
             const cfg = CONFIGS[cfgKey];
             function buildUnits(tables){
-                     const units = [];
-                     for(let i=0;i<tables.length;i++){
-                                const t = tables[i];
+                 const units = [];
+         for(let i=0;i<tables.length;i++){
+           const t = tables[i];
            const ts = String(t);
-                                if(/[A-Z]$/.test(ts)) continue; // consumed by its base table below
-                                const unit = [t];
-                                let j = i+1;
-                                while(j<tables.length && String(tables[j])===ts+"A"){ unit.push(tables[j]); j++; }
-                                units.push(unit);
-                                i = j-1;
-                     }
+                    if(/[A-Z]$/.test(ts)) continue; // consumed by its base table below
+                    const unit = [t];
+                         let j = i+1;
+                    while(j<tables.length && String(tables[j])===ts+"A"){ unit.push(tables[j]); j++; }
+                    units.push(unit);
+                    i = j-1;
+         }
                      return units;
             }
             const poolBy = {}; cfg.servers.forEach(s=>poolBy[s.name]=0);
             const poolTablesBy = {}; cfg.servers.forEach(s=>poolTablesBy[s.name]=[]);
             POOL.forEach(p=>{
-                     const a = getVal(cfgKey,p.t,'assign');
+                                          const a = getVal(cfgKey,p.t,'assign');
                      if(a && poolBy[a]!==undefined){ poolBy[a]+=guestTotal(cfgKey,p.t); poolTablesBy[a].push(p.t); }
             });
             const allTables = [];
             cfg.servers.forEach(s=>s.tables.forEach(t=>allTables.push(t)));
-            const allUnits = buildUnits(allTables).map(u=>({
+            const units = buildUnits(allTables).map(u=>({
                      tables: u,
                      total: u.reduce((a,t)=>a+guestTotal(cfgKey,t),0),
             }));
-            allUnits.sort((a,b)=>b.total-a.total);
-            const bins = cfg.servers.map(s=>({ name:s.name, total:poolBy[s.name], units:[] }));
-            allUnits.forEach(u=>{
-                     bins.sort((a,b)=>a.total-b.total);
-                     bins[0].units.push(u.tables);
-                     bins[0].total += u.total;
-            });
-            const idealLoad = {}, idealAssign = {}, unitAssign = {};
-            cfg.servers.forEach(s=>{
-                     const bin = bins.find(b=>b.name===s.name);
-                     unitAssign[s.name] = bin.units.flat();
-                     idealLoad[s.name] = bin.total;
-                     idealAssign[s.name] = bin.units.flat().concat(poolTablesBy[s.name]);
+       const M = units.length, N = cfg.servers.length;
+            const prefix = [0];
+            for(let i=0;i<M;i++) prefix.push(prefix[i]+units[i].total);
+            const segSum = (a,b)=>prefix[b]-prefix[a];
+            const grandTotal = prefix[M] + cfg.servers.reduce((a,s)=>a+poolBy[s.name],0);
+            const avg = N>0 ? grandTotal/N : 0;
+            // Split the M units into N contiguous, non-empty runs (floor order) that
+            // minimize total squared deviation from the average load — a big gap can
+            // ripple its fix through several boundaries, but every run stays intact.
+            const NEG = Infinity;
+            const dp = Array.from({length:N+1}, ()=>new Array(M+1).fill(NEG));
+            const back = Array.from({length:N+1}, ()=>new Array(M+1).fill(-1));
+            dp[0][0] = 0;
+            for(let j=1;j<=N;j++){
+                     const poolLoad = poolBy[cfg.servers[j-1].name];
+                     for(let i=1;i<=M;i++){
+                                for(let k=0;k<i;k++){
+                                             if(dp[j-1][k]===NEG) continue;
+                                             const segTotal = segSum(k,i) + poolLoad;
+                                             const cost = dp[j-1][k] + (segTotal-avg)*(segTotal-avg);
+                                             if(cost < dp[j][i]){ dp[j][i]=cost; back[j][i]=k; }
+     }
+                     }
+            }
+       let i = M, j = N;
+           const cuts = [];
+       while(j>0){
+         const k = back[j][i];
+                cuts.unshift([k,i]);
+                 i = k; j--;
+     }
+       const idealLoad = {}, idealAssign = {}, unitAssign = {};
+            cfg.servers.forEach((s,idx)=>{
+                     const [a,b] = cuts[idx] || [0,0];
+                     const segUnits = units.slice(a,b);
+                     const tables = segUnits.flatMap(u=>u.tables);
+                     unitAssign[s.name] = tables;
+                     idealLoad[s.name] = segSum(a,b) + poolBy[s.name];
+                     idealAssign[s.name] = tables.concat(poolTablesBy[s.name]);
             });
             return { idealLoad, idealAssign, unitAssign };
      }
@@ -1065,7 +1095,7 @@ function computeAnalytics(cfgKey){
         : '<tr><td colspan="3" class="left" style="color:#888">No table has reached a 2nd turn yet</td></tr>'}
     </table>
 
-        <table class="ideal-table"><caption>Ideal Section Distribution (fully balanced — packs tables into the lightest-loaded server regardless of section, may move a table away from its usual neighbors to close a gap)
+                <table class="ideal-table"><caption>Ideal Section Distribution (balanced, walkable — splits the floor into contiguous sections that even out guest counts; a big gap can shift the boundary through several servers, but no section gets scattered tables)
       <button class="action" style="padding:3px 10px;font-size:11px;margin-left:10px;" onclick="applyIdealRebalance('${cfgKey}')">Apply Suggested Rebalance</button>
     </caption>
       <tr><th>Section</th><th>Suggested Tables</th><th>Suggested Total</th><th>Current</th><th>Difference</th></tr>
