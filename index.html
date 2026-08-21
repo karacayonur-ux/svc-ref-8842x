@@ -904,75 +904,62 @@ function projectedFullHouseCovers(cfgKey){
   return { total, countedTables, unknownTables };
 }
 
-// Ideal distribution: sections are physically contiguous runs of tables
-// (Server 1 covers one stretch of the room, Server 2 the next, etc.), so we
-// only shift tables at the BOUNDARY between neighboring sections — never
-// jump a table across the room just because the totals would balance.
-// Split-table pairs (15/15A etc.) always move together as one unit. Pool
-// tables (bar/patio) are left exactly as currently assigned — their guest
-// counts just get folded into whichever server they're pointed at.
-// Shared by the read-only Analytics table and the one-click "Apply
-// Suggested Rebalance" button (unitAssign excludes pool tables, since pool
-// assignments are manual and shouldn't be touched by the rebalance).
-function computeIdealDistribution(cfgKey){
-  const cfg = CONFIGS[cfgKey];
-  function buildUnits(tables){
-    const units = [];
-    for(let i=0;i<tables.length;i++){
-      const t = tables[i];
-      const ts = String(t);
-      if(/[A-Z]$/.test(ts)) continue; // consumed by its base table below
-      const unit = [t];
-      let j = i+1;
-      while(j<tables.length && String(tables[j])===ts+"A"){ unit.push(tables[j]); j++; }
-      units.push(unit);
-      i = j-1;
-    }
-    return units;
-  }
-  const poolBy = {}; cfg.servers.forEach(s=>poolBy[s.name]=0);
-  const poolTablesBy = {}; cfg.servers.forEach(s=>poolTablesBy[s.name]=[]);
-  POOL.forEach(p=>{
-    const a = getVal(cfgKey,p.t,'assign');
-    if(a && poolBy[a]!==undefined){ poolBy[a]+=guestTotal(cfgKey,p.t); poolTablesBy[a].push(p.t); }
-  });
-  const sections = cfg.servers.map(s=>({ name:s.name, units:buildUnits(s.tables) }));
-  sections.forEach(sec=>{
-    sec.unitTotals = sec.units.map(u=>u.reduce((a,t)=>a+guestTotal(cfgKey,t),0));
-    sec.total = sec.unitTotals.reduce((a,b)=>a+b,0);
-  });
-  let improved = true, guard = 0;
-  while(improved && guard<200){
-    improved = false; guard++;
-    for(let i=0;i<sections.length-1;i++){
-      const left = sections[i], right = sections[i+1];
-      const curImbalance = Math.abs(left.total - right.total);
-      if(left.units.length>1){
-        const mv = left.unitTotals[left.unitTotals.length-1];
-        if(Math.abs((left.total-mv)-(right.total+mv)) < curImbalance-0.01){
-          right.units.unshift(left.units.pop());
-          right.unitTotals.unshift(left.unitTotals.pop());
-          left.total-=mv; right.total+=mv; improved=true; continue;
-        }
-      }
-      if(right.units.length>1){
-        const mv = right.unitTotals[0];
-        if(Math.abs((left.total+mv)-(right.total-mv)) < curImbalance-0.01){
-          left.units.push(right.units.shift());
-          left.unitTotals.push(right.unitTotals.shift());
-          right.total-=mv; left.total+=mv; improved=true;
-        }
-      }
-    }
-  }
-  const idealLoad = {}, idealAssign = {}, unitAssign = {};
-  sections.forEach(sec=>{
-    unitAssign[sec.name] = sec.units.flat();
-    idealLoad[sec.name] = sec.total + poolBy[sec.name];
-    idealAssign[sec.name] = sec.units.flat().concat(poolTablesBy[sec.name]);
-  });
-  return { idealLoad, idealAssign, unitAssign };
-}
+// Ideal distribution: every table (split pairs like 15/15A always move
+     // together as one unit) is packed into whichever server currently has the
+     // lightest total, largest parties first (a standard greedy balancing
+     // heuristic) — this optimizes purely for even guest counts across servers,
+     // and WILL move a table away from its usual neighbors/section if that's
+     // what it takes to close a big gap (e.g. Server 1 vs Server 5). Pool tables
+     // (bar/patio) are left exactly as currently assigned — their guest counts
+     // are added on top as a fixed starting load per server before the packing
+     // runs, so the final numbers stay balanced including pool guests too.
+     // Shared by the read-only Analytics table and the one-click "Apply
+     // Suggested Rebalance" button (unitAssign excludes pool tables, since pool
+     // assignments are manual and shouldn't be touched by the rebalance).
+     function computeIdealDistribution(cfgKey){
+            const cfg = CONFIGS[cfgKey];
+            function buildUnits(tables){
+                     const units = [];
+                     for(let i=0;i<tables.length;i++){
+                                const t = tables[i];
+           const ts = String(t);
+                                if(/[A-Z]$/.test(ts)) continue; // consumed by its base table below
+                                const unit = [t];
+                                let j = i+1;
+                                while(j<tables.length && String(tables[j])===ts+"A"){ unit.push(tables[j]); j++; }
+                                units.push(unit);
+                                i = j-1;
+                     }
+                     return units;
+            }
+            const poolBy = {}; cfg.servers.forEach(s=>poolBy[s.name]=0);
+            const poolTablesBy = {}; cfg.servers.forEach(s=>poolTablesBy[s.name]=[]);
+            POOL.forEach(p=>{
+                     const a = getVal(cfgKey,p.t,'assign');
+                     if(a && poolBy[a]!==undefined){ poolBy[a]+=guestTotal(cfgKey,p.t); poolTablesBy[a].push(p.t); }
+            });
+            const allTables = [];
+            cfg.servers.forEach(s=>s.tables.forEach(t=>allTables.push(t)));
+            const allUnits = buildUnits(allTables).map(u=>({
+                     tables: u,
+                     total: u.reduce((a,t)=>a+guestTotal(cfgKey,t),0),
+            }));
+            allUnits.sort((a,b)=>b.total-a.total);
+            const bins = cfg.servers.map(s=>({ name:s.name, total:poolBy[s.name], units:[] }));
+            allUnits.forEach(u=>{
+                     bins.sort((a,b)=>a.total-b.total);
+                     bins[0].units.push(u.tables);
+                     bins[0].total += u.total;
+            });
+            const idealLoad = {}, idealAssign = {}, unitAssign = {};
+            cfg.servers.forEach(s=>{
+                     const bin = bins.find(b=>b.name===s.name);
+                     unitAssign[s.name] = bin.units.flat();
+                     idealLoad[s.name] = bin.total;
+                     idealAssign[s.name] = bin.units.flat().concat(poolTablesBy[s.name]);
+            });
+            return { idealLoad, idealAssign, unitAssign };
+     }
 
 // Applies the boundary-rebalanced suggestion above as real Live
 // Reassignments — moves each seating on a table that changed hands to its
@@ -1078,7 +1065,7 @@ function computeAnalytics(cfgKey){
         : '<tr><td colspan="3" class="left" style="color:#888">No table has reached a 2nd turn yet</td></tr>'}
     </table>
 
-    <table class="ideal-table"><caption>Ideal Section Distribution (boundary rebalancing only — shifts tables between neighboring sections so the suggestion stays walkable, never jumps a table across the room)
+        <table class="ideal-table"><caption>Ideal Section Distribution (fully balanced — packs tables into the lightest-loaded server regardless of section, may move a table away from its usual neighbors to close a gap)
       <button class="action" style="padding:3px 10px;font-size:11px;margin-left:10px;" onclick="applyIdealRebalance('${cfgKey}')">Apply Suggested Rebalance</button>
     </caption>
       <tr><th>Section</th><th>Suggested Tables</th><th>Suggested Total</th><th>Current</th><th>Difference</th></tr>
