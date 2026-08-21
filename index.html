@@ -943,9 +943,11 @@ function projectedFullHouseCovers(cfgKey){
      // (bar/patio) are left exactly as currently assigned — their guest counts
      // are added on top as a fixed starting load per server before the split
      // points are chosen, so the final numbers stay balanced including pool
-     // guests too. Shared by the read-only Analytics table and the one-click
-     // "Apply Suggested Rebalance" button (unitAssign excludes pool tables, since
-     // pool assignments are manual and shouldn't be touched by the rebalance).
+// guests too. idealLoad (the per-server target total) is shown in the
+       // Analytics table as a number to aim for; unitAssign/idealAssign are kept
+       // for other callers but are no longer used to suggest moving whole tables
+       // between servers — see computeSeatingRebalance below for how the target is
+                                                   // actually reached (by reassigning specific parties, not tables).
      function computeIdealDistribution(cfgKey){
             const cfg = CONFIGS[cfgKey];
             function buildUnits(tables){
@@ -1017,30 +1019,71 @@ function projectedFullHouseCovers(cfgKey){
             return { idealLoad, idealAssign, unitAssign };
      }
 
-// Applies the boundary-rebalanced suggestion above as real Live
-// Reassignments — moves each seating on a table that changed hands to its
-// new suggested server, and replaces whatever manual reassignments were
-// already active for this section tab (so the result exactly matches what's
-// shown in the Ideal Section Distribution table).
-function applyIdealRebalance(cfgKey){
-  const cfg = CONFIGS[cfgKey];
-  if(!confirm(`Apply the suggested rebalance for ${cfg.label}?\n\nThis moves the seatings on any table that changed sections to its new suggested server, replacing any live reassignments already active on this tab tonight. Any individual tables already moved by hand (Section dropdown) are cleared first so the two don't conflict.`)) return;
-  const { unitAssign } = computeIdealDistribution(cfgKey);
-  STATE.tableSection[cfgKey] = {}; // start from the structural baseline, same as the suggestion did
-  const newList = [];
-  Object.entries(unitAssign).forEach(([serverName, tables])=>{
-    tables.forEach(t=>{
-      if(defaultOwnerOfTable(cfgKey,t) !== serverName){
-        tableSeatings(cfgKey, t).forEach(seat=>{
-          newList.push({ seatId:seat.seatId, table:String(t), time:seat.time, size:seat.size, guest:seat.guest, toServer:serverName });
-        });
-      }
-    });
-  });
-  STATE.reassign[cfgKey] = newList;
-  saveState(STATE);
-  renderAll();
-}
+// Suggests specific reservations/walk-ins to hand off to a lighter server
+     // tonight, using the existing per-seating Live Reassignment mechanism —
+     // NEVER by moving a whole table between servers. Every section's table
+     // numbers stay exactly the same all night (Server 1 is always Server 1's
+     // own tables); only which server gets credit for a given party's guest
+     // count changes. Greedy: repeatedly hands a seating from whichever server
+     // is currently heaviest to whichever is currently lightest, preferring one
+     // that fits the gap without overshooting, until the gap can't usefully
+     // shrink any further. Seatings already reassigned by hand tonight are left
+     // alone (never re-suggested or double-counted); pool tables are untouched
+     // (their assignment is manual only).
+     function computeSeatingRebalance(cfgKey){
+            const cfg = CONFIGS[cfgKey];
+            const allTables = [];
+            cfg.servers.forEach(s=>s.tables.forEach(t=>allTables.push(t)));
+            const seatings = [];
+            allTables.forEach(t=>{
+                     tableSeatings(cfgKey,t).forEach(seat=>{
+                                const owner = seatOwnerServer(cfgKey,t,seat.seatId);
+                                if(!owner) return;
+                                const alreadyMoved = !!reassignedToFor(cfgKey,t,seat.seatId);
+                                seatings.push({ table:t, seatId:seat.seatId, time:seat.time, size:Number(seat.size)||0, guest:seat.guest, owner, alreadyMoved });
+                     });
+            });
+            const loads = {}; cfg.servers.forEach(s=>loads[s.name]=0);
+            seatings.forEach(se=>{ loads[se.owner] = (loads[se.owner]||0) + se.size; });
+            const movable = seatings.filter(se=>!se.alreadyMoved).sort((a,b)=>b.size-a.size);
+            const used = new Set();
+            const suggestions = [];
+            let guard = 0;
+            while(guard++ < 200){
+                     const names = cfg.servers.map(s=>s.name);
+                     const heaviest = names.reduce((a,b)=>loads[a]>=loads[b]?a:b);
+                     const lightest = names.reduce((a,b)=>loads[a]<=loads[b]?a:b);
+                     const gap = loads[heaviest]-loads[lightest];
+                     if(heaviest===lightest || gap<=1) break;
+                     const fitting = movable.find(se=>!used.has(se.seatId) && se.owner===heaviest && se.size<=gap);
+                     const cand = fitting || movable.find(se=>!used.has(se.seatId) && se.owner===heaviest);
+                     if(!cand) break;
+                     used.add(cand.seatId);
+                     suggestions.push({ ...cand, toServer: lightest });
+                     loads[heaviest] -= cand.size; loads[lightest] += cand.size;
+            }
+            return { loads, suggestions };
+     }
+
+     // Applies every suggested seating move above at once, the same way the
+     // "Move" button on each individual row does — via addReassignment, so
+     // tables themselves never change hands, only which server's count each
+     // moved party is credited to.
+     function applySeatingRebalance(cfgKey){
+            const cfg = CONFIGS[cfgKey];
+            const { suggestions } = computeSeatingRebalance(cfgKey);
+            if(!suggestions.length){ alert("Nothing to rebalance — sections are already close to even."); return; }
+            if(!confirm(`Apply ${suggestions.length} suggested seating move${suggestions.length===1?'':'s'} for ${cfg.label}?\n\nEach party listed moves to its suggested server's count for tonight. Tables stay exactly where they are — this never reassigns a whole table.`)) return;
+            if(!STATE.reassign[cfgKey]) STATE.reassign[cfgKey] = [];
+            const list = STATE.reassign[cfgKey];
+            suggestions.forEach(su=>{
+                     const idx = list.findIndex(r=>r.seatId===su.seatId);
+                     const entry = { seatId:su.seatId, table:String(su.table), time:su.time, size:su.size, guest:su.guest, toServer:su.toServer };
+                     if(idx>=0) list[idx] = entry; else list.push(entry);
+            });
+            saveState(STATE);
+            renderAll();
+     }
 
 function computeAnalytics(cfgKey){
   const cfg = CONFIGS[cfgKey];
@@ -1078,7 +1121,8 @@ function computeAnalytics(cfgKey){
   const avgGuestPerServer = cfg.servers.length ? Math.round(allGuests/cfg.servers.length) : 0;
   const covers = projectedFullHouseCovers(cfgKey);
 
-  const { idealLoad, idealAssign } = computeIdealDistribution(cfgKey);
+    const { idealLoad } = computeIdealDistribution(cfgKey);
+         const { suggestions: seatMoves } = computeSeatingRebalance(cfgKey);
 
   let html = `<div class="dash"><h2>📊 Analytics — ${cfg.label}</h2>
     <div class="dash-grid">
@@ -1121,24 +1165,27 @@ function computeAnalytics(cfgKey){
         : '<tr><td colspan="3" class="left" style="color:#888">No table has reached a 2nd turn yet</td></tr>'}
     </table>
 
-                <table class="ideal-table"><caption>Ideal Section Distribution (balanced, walkable — splits the floor into contiguous sections that even out guest counts; a big gap can shift the boundary through several servers, but no section gets scattered tables)
-      <button class="action" style="padding:3px 10px;font-size:11px;margin-left:10px;" onclick="applyIdealRebalance('${cfgKey}')">Apply Suggested Rebalance</button>
-    </caption>
-      <tr><th>Section</th><th>Suggested Tables</th><th>Suggested Total</th><th>Current</th><th>Difference</th></tr>
-      ${cfg.servers.map(s=>{
-        const cur = sectionRows.find(r=>r.name===s.name).total;
-        const ideal = idealLoad[s.name];
-        const diff = ideal-cur;
-        const diffHtml = diff===0 ? '0' : (diff>0? `<span class="diff-up">+${diff}</span>` : `<span class="diff-down">${diff}</span>`);
-        // Tables the algorithm suggests for this section that aren't here yet
-        // (by either the structural default or an already-applied table
-        // move) get a one-click "Move here" button — the same whole-table
-        // move offered by the Section dropdown on each table row.
-        const moves = (idealAssign[s.name]||[]).filter(t=>defaultOwnerOfTable(cfgKey,t)!==s.name && effectiveTableOwner(cfgKey,t)!==s.name);
-        const moveHtml = moves.length ? `<div class="sub2" style="margin-top:4px;">${moves.map(t=>`Table ${t} <button class="action" style="padding:2px 6px;font-size:10.5px;" onclick="moveTableToServer('${cfgKey}',${jsStr(t)},'${s.name}')">Move here</button>`).join(" &nbsp; ")}</div>` : '';
-        return `<tr><td class="left"><b>${getServerDisplayName(cfgKey,s.name)}</b></td><td class="left">${idealAssign[s.name].join(", ")||'—'}${moveHtml}</td><td>${ideal}</td><td>${cur}</td><td>${diffHtml}</td></tr>`;
-      }).join("")}
-    </table>
+                    <table class="ideal-table"><caption>Section Load Target — a suggested guest-count balance to aim for; each section's own tables never change, only the total</caption>
+                          <tr><th>Section</th><th>Current Total</th><th>Suggested Target</th><th>Difference</th></tr>
+                                ${cfg.servers.map(s=>{
+                                             const cur = sectionRows.find(r=>r.name===s.name).total;
+                                             const ideal = idealLoad[s.name];
+                                             const diff = ideal-cur;
+                                             const diffHtml = diff===0 ? '0' : (diff>0? `<span class="diff-up">+${diff}</span>` : `<span class="diff-down">${diff}</span>`);
+                                             return `<tr><td class="left"><b>${getServerDisplayName(cfgKey,s.name)}</b></td><td>${cur}</td><td>${ideal}</td><td>${diffHtml}</td></tr>`;
+                                }).join("")}
+                                    </table>
+
+                                        <table class="ideal-table"><caption>Suggested Seating Moves — hands specific reservations/walk-ins to a lighter server's count for tonight; tables themselves never change hands
+                                              <button class="action" style="padding:3px 10px;font-size:11px;margin-left:10px;" onclick="applySeatingRebalance('${cfgKey}')">Apply All Suggested Moves</button>
+                                                  </caption>
+                                                        <tr><th>Table</th><th>Time</th><th>Size</th><th>Guest</th><th>From</th><th>To</th><th></th></tr>
+                                                              ${seatMoves.length ? seatMoves.map(m=>`<tr>
+                                                                      <td>${m.table}</td><td>${m.time}</td><td>${m.size}</td><td class="left">${m.guest||''}</td>
+                                                                              <td class="left">${getServerDisplayName(cfgKey,m.owner)}</td><td class="left"><b>${getServerDisplayName(cfgKey,m.toServer)}</b></td>
+                                                                                      <td><button class="action" style="padding:2px 6px;font-size:10.5px;" onclick="addReassignment('${cfgKey}',${jsStr(m.table)},${jsStr(m.seatId)},${jsStr(m.time)},${m.size},${jsStr(m.guest||'')},'${m.toServer}')">Move</button></td>
+                                                                                            </tr>`).join("") : '<tr><td colspan="7" class="left" style="color:#888">Sections are already close to even — nothing to suggest.</td></tr>'}
+                                                                                                </table>
   </div>`;
   return html;
 }
