@@ -645,7 +645,33 @@ function moveTableToServer(cfgKey, table, toServer){
   renderAll();
 }
 
-// Matched by seatId AND table together — a reservation's seatId (res_N) is
+// Effective table list for a server tonight — starts from its structural
+     // default tables, drops any moved away to a different server (Section
+     // dropdown or the Ideal Distribution "Move here" button), and adds in any
+     // moved to it from elsewhere. This is what actually renders under each
+     // server's card, so a moved table shows up settled in its new section
+     // (with its own inline "moved" tag) instead of staying listed under its old
+     // section with a separate "Table moved in/out" footnote to cross-reference.
+     function effectiveTablesForServer(cfgKey, serverName){
+            const cfg = CONFIGS[cfgKey];
+            const server = cfg.servers.find(s=>s.name===serverName);
+            const base = server ? server.tables : [];
+            const overrides = (STATE.tableSection && STATE.tableSection[cfgKey]) || {};
+            const kept = base.filter(t=>{
+                     const ov = overrides[String(t)];
+                     return !ov || ov===serverName;
+            });
+            const movedIn = [];
+            cfg.servers.forEach(s=>{
+                     if(s.name===serverName) return;
+                     s.tables.forEach(t=>{
+                                if(overrides[String(t)]===serverName) movedIn.push(t);
+                     });
+            });
+            return kept.concat(movedIn);
+     }
+     
+     // Matched by seatId AND table together — a reservation's seatId (res_N) is
 // just its position in tonight's pulled list, so if the list is ever
 // re-pulled (new counts, a new day) that same id can land on a completely
 // different table. Requiring the table to match too means a stale
@@ -1246,32 +1272,33 @@ function renderPanel(cfgKey){
   </table>`;
 
   cfg.servers.forEach(s=>{
-    html += `<table><caption>${getServerDisplayName(cfgKey,s.name).toUpperCase()} — GUEST COUNT BY TABLE</caption>
-      <tr><th>Table</th><th>Cap.</th><th>Seatings Tonight</th><th></th><th>Total Guests</th><th>Turns</th><th>Est. Free</th><th>Area</th><th>Split Table</th><th>Assigned Server</th><th>Notes</th></tr>`;
-        s.tables.forEach(t=>{ html += renderTableRow(cfgKey, t, "DINING ROOM", s.tables, getServerDisplayName(cfgKey,s.name), "section"); });
-    const sg1 = serverBlockTotal(cfgKey, s.name, 0), sg2 = serverBlockTotal(cfgKey, s.name, 1), sg3 = serverBlockTotal(cfgKey, s.name, 2);
-    const {total: sTotal, turns: sTurns} = serverTotal(cfgKey, s);
-    html += `<tr style="background:#eef1f7;font-weight:600;">
-      <td colspan="2" class="left">SECTION TOTAL</td>
-      <td class="left" style="font-size:11px;font-weight:normal;color:#555;">4-6: ${sg1} · 6-8: ${sg2} · 8-Close: ${sg3}</td>
-      <td></td>
-      <td>${sTotal}</td><td>${sTurns}</td>
-      <td colspan="5"></td>
-    </tr>`;
-    html += `</table>`;
-        const incoming = (STATE.reassign[cfgKey]||[]).filter(r=>r.toServer===s.name && defaultOwnerOfTable(cfgKey,r.table)!==s.name);
-    const outgoing = (STATE.reassign[cfgKey]||[]).filter(r=>defaultOwnerOfTable(cfgKey,r.table)===s.name && r.toServer!==s.name);
-    const tableMovesIn = Object.entries((STATE.tableSection && STATE.tableSection[cfgKey]) || {}).filter(([t,toServer])=>toServer===s.name);
-    const tableMovesOut = Object.entries((STATE.tableSection && STATE.tableSection[cfgKey]) || {}).filter(([t])=>defaultOwnerOfTable(cfgKey,t)===s.name);
-    if(incoming.length || outgoing.length || tableMovesIn.length || tableMovesOut.length){
-      html += `<div class="sub2" style="margin:-8px 0 14px 4px;color:#888;">`;
-      if(tableMovesIn.length) html += `<span class="suggest">Table moved in:</span> ${tableMovesIn.map(([t])=>`Table ${t} (from ${getServerDisplayName(cfgKey,defaultOwnerOfTable(cfgKey,t))})`).join(", ")}<br>`;
-      if(tableMovesOut.length) html += `<span class="suggest">Table moved out:</span> ${tableMovesOut.map(([t,toServer])=>`Table ${t} (to ${getServerDisplayName(cfgKey,toServer)})`).join(", ")}<br>`;
-      if(incoming.length) html += `<span class="suggest">In:</span> ${incoming.map(r=>`Table ${r.table} (${r.time}, from ${getServerDisplayName(cfgKey,defaultOwnerOfTable(cfgKey,r.table))})`).join(", ")}`;
-      if(incoming.length && outgoing.length) html += ` &nbsp;·&nbsp; `;
-      if(outgoing.length) html += `<span class="suggest">Out:</span> ${outgoing.map(r=>`Table ${r.table} (${r.time}, to ${getServerDisplayName(cfgKey,r.toServer)})`).join(", ")}`;
-      html += `</div>`;
-    }
+         const effTables = effectiveTablesForServer(cfgKey, s.name);
+           html += `<table><caption>${getServerDisplayName(cfgKey,s.name).toUpperCase()} — GUEST COUNT BY TABLE</caption>
+                 <tr><th>Table</th><th>Cap.</th><th>Seatings Tonight</th><th></th><th>Total Guests</th><th>Turns</th><th>Est. Free</th><th>Area</th><th>Split Table</th><th>Assigned Server</th><th>Notes</th></tr>`;
+           effTables.forEach(t=>{ html += renderTableRow(cfgKey, t, "DINING ROOM", effTables, getServerDisplayName(cfgKey,s.name), "section"); });
+           const sg1 = serverBlockTotal(cfgKey, s.name, 0), sg2 = serverBlockTotal(cfgKey, s.name, 1), sg3 = serverBlockTotal(cfgKey, s.name, 2);
+           const {total: sTotal, turns: sTurns} = serverTotal(cfgKey, s);
+           html += `<tr style="background:#eef1f7;font-weight:600;">
+                 <td colspan="2" class="left">SECTION TOTAL</td>
+                       <td class="left" style="font-size:11px;font-weight:normal;color:#555;">4-6: ${sg1} · 6-8: ${sg2} · 8-Close: ${sg3}</td>
+                             <td></td>
+                                   <td>${sTotal}</td><td>${sTurns}</td>
+                                         <td colspan="5"></td>
+                                             </tr>`;
+           html += `</table>`;
+           // Whole-table moves now show up directly in the section's own table list
+           // above (with an inline "moved" tag on the row), so only per-seating Live
+           // Reassignments — which stay physically on a table that belongs
+           // elsewhere — still need a separate note here.
+           const incoming = (STATE.reassign[cfgKey]||[]).filter(r=>r.toServer===s.name && defaultOwnerOfTable(cfgKey,r.table)!==s.name);
+           const outgoing = (STATE.reassign[cfgKey]||[]).filter(r=>defaultOwnerOfTable(cfgKey,r.table)===s.name && r.toServer!==s.name);
+           if(incoming.length || outgoing.length){
+                      html += `<div class="sub2" style="margin:-8px 0 14px 4px;color:#888;">`;
+                      if(incoming.length) html += `<span class="suggest">Seating moved in:</span> ${incoming.map(r=>`Table ${r.table} (${r.time}, from ${getServerDisplayName(cfgKey,defaultOwnerOfTable(cfgKey,r.table))})`).join(", ")}`;
+                      if(incoming.length && outgoing.length) html += ` &nbsp;·&nbsp; `;
+                      if(outgoing.length) html += `<span class="suggest">Seating moved out:</span> ${outgoing.map(r=>`Table ${r.table} (${r.time}, to ${getServerDisplayName(cfgKey,r.toServer)})`).join(", ")}`;
+                      html += `</div>`;
+           }
   });
 
   // suggested server for pool = lowest current total
