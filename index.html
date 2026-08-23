@@ -64,11 +64,11 @@
   .ideal-table td, .ideal-table th{font-size:11.5px;}
   .diff-up{color:#a32d2d;font-weight:bold;}
   .diff-down{color:#3b6d11;font-weight:bold;}
-       .state-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;z-index:9999;padding:20px;}
-       .state-modal{background:#fff;border-radius:8px;padding:18px 20px;width:min(600px,94vw);max-height:85vh;overflow:auto;box-shadow:0 8px 30px rgba(0,0,0,0.3);}
-       .state-modal h3{margin:0 0 8px;font-size:15px;color:var(--navy);}
-       .state-modal p{font-size:12px;color:#666;margin:0 0 10px;}
-       .state-modal textarea{width:100%;height:200px;font-family:monospace;font-size:11px;box-sizing:border-box;border:1px solid var(--border);border-radius:6px;padding:8px;}
+  .state-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;z-index:9999;padding:20px;}
+  .state-modal{background:#fff;border-radius:8px;padding:18px 20px;width:min(600px,94vw);max-height:85vh;overflow:auto;box-shadow:0 8px 30px rgba(0,0,0,0.3);}
+  .state-modal h3{margin:0 0 8px;font-size:15px;color:var(--navy);}
+  .state-modal p{font-size:12px;color:#666;margin:0 0 10px;}
+  .state-modal textarea{width:100%;height:200px;font-family:monospace;font-size:11px;box-sizing:border-box;border:1px solid var(--border);border-radius:6px;padding:8px;}
   @media print{
     .tabs,.toolbar,.headerbar select,button{display:none;}
     .panel{display:block !important;}
@@ -79,6 +79,7 @@
 
 <h1>The Address — Host Stand Book</h1>
 <div class="sub">Interactive version — reservations flow in automatically from OpenTable; log walk-ins with a real time as they're seated. Totals and load status calculate automatically. Auto-saves in your browser.</div>
+<div class="sub" id="last-updated-banner" style="font-weight:bold;color:var(--navy);"></div>
 <div id="storage-warning" style="display:none;background:#fff3cd;border:1px solid #e0b400;color:#6b5400;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:10px;">
   Auto-save isn't working in this browser (some browsers block this when the file is opened directly). Calculations still work, but your numbers will be cleared if you refresh the page.
 </div>
@@ -98,24 +99,25 @@
 </div>
 
 <div class="toolbar">
-       <button class="action" id="btn-reset">New Shift (Reset Walk-ins & Notes)</button>
-       <button class="action" id="btn-print">Print</button>
-       <button class="action" id="btn-export">Export as CSV</button>
-       <button class="action" id="btn-export-state">Copy Data (send to other device)</button>
-       <button class="action" id="btn-import-state">Paste Data (from other device)</button>
+  <button class="action" id="btn-reset">New Shift (Reset Walk-ins & Notes)</button>
+  <button class="action" id="btn-print">Print</button>
+  <button class="action" id="btn-export">Export as CSV</button>
+  <button class="action" id="btn-export-state">Copy Data (send to other device)</button>
+  <button class="action" id="btn-import-state">Paste Data (from other device)</button>
 </div>
 
-     <div id="state-modal-overlay" class="state-modal-overlay">
-            <div class="state-modal">
-                     <h3 id="state-modal-title"></h3>
-                     <p id="state-modal-desc"></p>
-                     <textarea id="state-modal-text" spellcheck="false"></textarea>
-                              <div style="margin-top:10px;text-align:right;">
-                                <button class="action" id="state-modal-close">Close</button>
-                                <button class="action" id="state-modal-action"></button>
-                              </div>
-            </div>
-     </div>
+<div id="state-modal-overlay" class="state-modal-overlay">
+  <div class="state-modal">
+    <h3 id="state-modal-title"></h3>
+    <p id="state-modal-desc"></p>
+    <textarea id="state-modal-text" spellcheck="false"></textarea>
+    <div style="margin-top:10px;text-align:right;">
+      <button class="action" id="state-modal-close">Close</button>
+      <button class="action" id="state-modal-action"></button>
+    </div>
+  </div>
+</div>
+
 <div class="legend">
   <b>Load:</b>
   <span><span class="swatch" style="background:var(--normal)"></span>0-19 Normal</span>
@@ -158,16 +160,16 @@ const CONFIGS = {
   weekday4: { label:"Weekday - 4 Server", days:"Thu & Sun", closing:"10:00 PM", servers:[
     {name:"Server 1", tables:[1,2,3,4,5,12,13]},
     {name:"Server 2", tables:[6,7,8,9,10,11]},
-     {name:"Server 3", tables:[14,15,"15A",21,22,23,24]},
-     {name:"Server 4", tables:[16,"16A",17,"17A",18,19,"19A",20]},
+    {name:"Server 3", tables:[14,15,"15A",21,22,23,24]},
+    {name:"Server 4", tables:[16,"16A",17,"17A",18,19,"19A",20]},
   ]},
-       weekday5: { label:"Weekday - 5 Server", days:"As Needed", closing:"10:00 PM", servers:[
-            {name:"Server 1", tables:[1,2,3,4,5]},
-            {name:"Server 2", tables:[6,7,8,9,10,11,12,13]},
-            {name:"Server 3", tables:[14,15,"15A",16,"16A",17,"17A"]},
-            {name:"Server 4", tables:[18,19,"19A",20]},
-            {name:"Server 5", tables:[21,22,23,24]},
-              ]},
+  weekday5: { label:"Weekday - 5 Server", days:"As Needed", closing:"10:00 PM", servers:[
+    {name:"Server 1", tables:[1,2,3,4,5]},
+    {name:"Server 2", tables:[6,7,8,9,10,11,12,13]},
+    {name:"Server 3", tables:[14,15,"15A",16,"16A",17,"17A"]},
+    {name:"Server 4", tables:[18,19,"19A",20]},
+    {name:"Server 5", tables:[21,22,23,24]},
+  ]},
   weekend6: { label:"Weekend - 6 Server", days:"Fri–Sat", closing:"10:30 PM", servers:[
     {name:"Server 1", tables:[1,2,3,4,5]},
     {name:"Server 2", tables:[6,7,8,9]},
@@ -190,6 +192,7 @@ const POOL = [
 const RESERVATIONS_TODAY = {
   date: "2026-08-23",
   shiftLabel: "Sunday, August 23 · Dinner",
+  lastUpdated: "Aug 23, 4:05 PM",
   covers: 54, parties: 15,
   list: [
     {time:"5:00 PM", size:3, guest:"Ning Chiang", table:"16", notes:""},
@@ -209,6 +212,22 @@ const RESERVATIONS_TODAY = {
     {time:"7:30 PM", size:2, guest:"Diana Kosel", table:"11", notes:""},
   ],
 };
+
+// Real server names for tonight, edited here (in the office) and pushed to
+// GitHub so every device — every tablet/phone at the host stand — shows the
+// same names without anyone having to type them in locally. Key format is
+// "cfgKey__Server N" (the generic internal label), value is the real name.
+// Leave a key out (or set it to "") to keep showing the generic "Server 1"
+// label for that slot. A hostess can still type a quick override for HER
+// device only via the input box in the Server Load Summary table — that
+// local override always wins over this file value until she clears it, so
+// it's safe for a same-shift correction without needing a push.
+const SERVER_NAMES = {
+  // "weekday3__Server 1": "Ayşe",
+  // "weekday3__Server 2": "Mehmet",
+  // "weekday3__Server 3": "Zeynep",
+};
+
 function isSplit(table, list){
   const s = String(table);
   if(/[A-Z]$/.test(s)) return true;
@@ -224,6 +243,16 @@ function isSplit(table, list){
 // a double-quoted attribute.
 function jsStr(v){
   return "'" + String(v).replace(/\\/g,"\\\\").replace(/'/g,"\\'") + "'";
+}
+
+// Turns a hand-typed table list ("1, 2, 3" or "1/2/3" or "15 15A 16") into
+// the same mixed number/string array shape used everywhere else (plain
+// table numbers stay numbers, split halves like "15A" stay strings) — used
+// by the Custom Section editor so a manager can type table lists the same
+// loose way they'd write them on a sticky note.
+function parseTableList(str){
+  return String(str||"").split(/[,\/\s]+/).map(s=>s.trim()).filter(Boolean)
+    .map(s=>/^\d+$/.test(s) ? Number(s) : s);
 }
 
 // Real seat counts per table, as given by the restaurant (Aug 2026). Split
@@ -432,33 +461,33 @@ if(!STATE.history) STATE.history = {};
 if(!STATE.walkins) STATE.walkins = {};
 if(!STATE.serverNames) STATE.serverNames = {};
 if(!STATE.tableSection) STATE.tableSection = {};
-     function parseTableList(str){
-  return String(str||"").split(/[,\/\s]+/).map(s=>s.trim()).filter(Boolean)
-    .map(s=>/^\d+$/.test(s) ? Number(s) : s);
-}
 // Custom Section builder: lets tonight's sections be drawn up freely instead
-// of picking one of the 3 fixed presets, a manager types in server names
+// of picking one of the 3 fixed presets — a manager types in server names
 // and which tables belong to each, the same loose way it'd be written on a
-// sticky note. First-run default below mirrors the actual paper section
-// chart tonight so numbers are visible immediately without retyping it.
+// sticky note. Lives only in this browser's storage unless it's later copied
+// into the file (like SERVER_NAMES) to push the same layout to every device.
+// First-run default below mirrors the actual paper section chart tonight so
+// numbers are visible immediately without retyping it.
 if(!STATE.customSections){
   STATE.customSections = [
     {name:"Dana", tables:[1,2,3,4,5]},
     {name:"Mehmet", tables:[6,7,8,9,10]},
     {name:"Anoo", tables:[11,12,13,14]},
-    {name:"Ilker", tables:[15,"15A",16,"16A",17,"17A"]},
+    {name:"İlker", tables:[15,"15A",16,"16A",17,"17A"]},
     {name:"Lily", tables:[18,19,"19A",20,30]},
     {name:"Lucy", tables:[21,22,23,24]},
   ];
   [25,26,27,28,29].forEach(t=>{ STATE.data[`custom__${t}__assign`] = "Lucy"; });
 }
 // Rebuilds CONFIGS.custom from STATE.customSections so every existing
-// function that already works off CONFIGS[cfgKey] works for the custom tab
-// with zero changes.
+// function that already works off CONFIGS[cfgKey] (guest totals, load
+// summary, analytics, ideal-distribution suggestion, pool assignment, etc.)
+// works for the custom tab with zero changes — CONFIGS is a const binding
+// but its properties can still be added/replaced, which is all this does.
 function syncCustomConfig(){
   CONFIGS.custom = {
-    label: "Custom - Tonight",
-    days: "Custom",
+    label: "Custom — Bu Gece",
+    days: "Özel",
     closing: (CONFIGS.weekday3 && CONFIGS.weekday3.closing) || "10:00 PM",
     servers: (STATE.customSections||[]).filter(s=>s && s.name).map(s=>({ name:s.name, tables:s.tables||[] })),
   };
@@ -467,7 +496,7 @@ syncCustomConfig();
 
 function addCustomSection(){
   if(!STATE.customSections) STATE.customSections = [];
-  STATE.customSections.push({ name:`Server ${STATE.customSections.length+1}`, tables:[] });
+  STATE.customSections.push({ name:`Garson ${STATE.customSections.length+1}`, tables:[] });
   syncCustomConfig();
   saveState(STATE);
   renderAll();
@@ -480,7 +509,7 @@ function removeCustomSection(i){
 }
 function updateCustomSectionName(i,val){
   const v = (val||"").trim();
-  STATE.customSections[i].name = v || `Server ${i+1}`;
+  STATE.customSections[i].name = v || `Garson ${i+1}`;
   syncCustomConfig();
   saveState(STATE);
   renderAll();
@@ -491,9 +520,11 @@ function updateCustomSectionTables(i,val){
   saveState(STATE);
   renderAll();
 }
+
 // Editable roster shown at the top of the Custom tab, plus a duplicate-table
-// warning so a table listed under two servers doesn't silently get
-// double-counted.
+// warning — the same table listed under two servers would silently get
+// double-counted in both sections' totals below, so this flags it clearly
+// instead of leaving the numbers quietly wrong.
 function renderCustomEditor(){
   const sections = STATE.customSections || [];
   const seenAt = {};
@@ -502,37 +533,43 @@ function renderCustomEditor(){
     (s.tables||[]).forEach(t=>{
       const key = String(t);
       if(seenAt[key]!==undefined && seenAt[key]!==i){
-        dupWarnings.push(`Table ${key}: listed under both "${sections[seenAt[key]].name}" and "${s.name}" - it should only be in one, otherwise totals will be wrong.`);
+        dupWarnings.push(`Masa ${key}: hem "${sections[seenAt[key]].name}" hem "${s.name}" bölümünde — sadece birinde olmalı, yoksa toplamlar yanlış çıkar.`);
       } else {
         seenAt[key]=i;
       }
     });
   });
   let html = `<div class="dash" style="margin-bottom:14px;">
-    <h2>Tonight's Custom Sections</h2>
-    <div class="sub2" style="margin-bottom:10px;color:#888;">Add/remove servers, type which tables belong to each (comma or / separated, e.g. 1,2,3,4,5 or 15,15A,16,16A). The load summary, hourly intensity, and Analytics below all calculate automatically from this. Bar/Patio (25-34) is still assigned from the BAR/PATIO table below as usual.</div>
+    <h2>🛠️ Bu Geceye Özel Bölümleme</h2>
+    <div class="sub2" style="margin-bottom:10px;color:#888;">Garson ekle/çıkar, hangi masaların onun bölümünde olduğunu yaz (virgül veya / ile ayır, örn. 1,2,3,4,5 veya 15,15A,16,16A). Aşağıdaki yük özeti, saatlik yoğunluk ve Analytics bu bölümlemeye göre otomatik hesaplanır. Bar/Patio (25-34) ataması her zamanki gibi aşağıdaki BAR/PATIO tablosundan yapılır.</div>
     ${dupWarnings.length ? `<div style="background:#f8d7da;border:1px solid #c00;color:#5a0000;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:10px;">${dupWarnings.join("<br>")}</div>` : ''}
-    <table><caption>SERVER - TABLES</caption>
-    <tr><th>Server</th><th>Tables</th><th></th></tr>
+    <table><caption>GARSON — MASALAR</caption>
+    <tr><th>Garson</th><th>Masalar</th><th></th></tr>
     ${sections.map((s,i)=>`<tr>
       <td class="left"><input type="text" class="notes" style="font-weight:bold;min-width:100px;" value="${String(s.name).replace(/"/g,'&quot;')}" onchange="updateCustomSectionName(${i},this.value)"></td>
       <td class="left"><input type="text" class="notes" style="min-width:260px;" value="${(s.tables||[]).join(', ')}" onchange="updateCustomSectionTables(${i},this.value)"></td>
-      <td><button class="action" style="padding:3px 8px;font-size:11px;" onclick="removeCustomSection(${i})">Remove</button></td>
-    </tr>`).join("") || `<tr><td colspan="3" class="left" style="color:#888;">No servers added yet.</td></tr>`}
+      <td><button class="action" style="padding:3px 8px;font-size:11px;" onclick="removeCustomSection(${i})">Sil</button></td>
+    </tr>`).join("") || `<tr><td colspan="3" class="left" style="color:#888;">Henüz garson eklenmedi.</td></tr>`}
     </table>
-    <button class="action" style="margin-top:8px;" onclick="addCustomSection()">+ Add Server</button>
+    <button class="action" style="margin-top:8px;" onclick="addCustomSection()">+ Garson Ekle</button>
   </div>`;
   return html;
 }
 
-
-// Lets a hostess type the real server's name over the generic "Server 1"
-// label for tonight, without touching any of the internal keys (assign
-// values, reassignment records, etc.) that still use "Server 1" etc. — this
-// is purely a display-layer swap, looked up wherever a server name is shown.
+// Real server name for tonight, looked up wherever a server name is shown.
+// Priority: a local per-device override (typed into this browser via the
+// input box in Server Load Summary) beats the office-edited SERVER_NAMES
+// value above, which beats the generic "Server 1" fallback. This means the
+// normal path is: edit SERVER_NAMES in the office and push — every device
+// updates automatically — while a hostess can still type a one-off same-shift
+// correction on her own tablet without needing a push. Never touches any of
+// the internal keys (assign values, reassignment records, etc.) that still
+// use "Server 1" etc. — this is purely a display-layer swap.
 function getServerDisplayName(cfgKey, serverKey){
   const k = `${cfgKey}__${serverKey}`;
-  return (STATE.serverNames && STATE.serverNames[k]) || serverKey;
+  if(STATE.serverNames && STATE.serverNames[k]) return STATE.serverNames[k];
+  if(SERVER_NAMES && SERVER_NAMES[k]) return SERVER_NAMES[k];
+  return serverKey;
 }
 function setServerDisplayName(cfgKey, serverKey, val){
   if(!STATE.serverNames) STATE.serverNames = {};
@@ -655,32 +692,32 @@ function moveTableToServer(cfgKey, table, toServer){
 }
 
 // Effective table list for a server tonight — starts from its structural
-     // default tables, drops any moved away to a different server (Section
-     // dropdown or the Ideal Distribution "Move here" button), and adds in any
-     // moved to it from elsewhere. This is what actually renders under each
-     // server's card, so a moved table shows up settled in its new section
-     // (with its own inline "moved" tag) instead of staying listed under its old
-     // section with a separate "Table moved in/out" footnote to cross-reference.
-     function effectiveTablesForServer(cfgKey, serverName){
-            const cfg = CONFIGS[cfgKey];
-            const server = cfg.servers.find(s=>s.name===serverName);
-            const base = server ? server.tables : [];
-            const overrides = (STATE.tableSection && STATE.tableSection[cfgKey]) || {};
-            const kept = base.filter(t=>{
-                     const ov = overrides[String(t)];
-                     return !ov || ov===serverName;
-            });
-            const movedIn = [];
-            cfg.servers.forEach(s=>{
-                     if(s.name===serverName) return;
-                     s.tables.forEach(t=>{
-                                if(overrides[String(t)]===serverName) movedIn.push(t);
-                     });
-            });
-            return kept.concat(movedIn);
-     }
-     
-     // Matched by seatId AND table together — a reservation's seatId (res_N) is
+// default tables, drops any moved away to a different server (Section
+// dropdown or the Ideal Distribution "Move here" button), and adds in any
+// moved to it from elsewhere. This is what actually renders under each
+// server's card, so a moved table shows up settled in its new section
+// (with its own inline "moved" tag) instead of staying listed under its old
+// section with a separate "Table moved in/out" footnote to cross-reference.
+function effectiveTablesForServer(cfgKey, serverName){
+  const cfg = CONFIGS[cfgKey];
+  const server = cfg.servers.find(s=>s.name===serverName);
+  const base = server ? server.tables : [];
+  const overrides = (STATE.tableSection && STATE.tableSection[cfgKey]) || {};
+  const kept = base.filter(t=>{
+    const ov = overrides[String(t)];
+    return !ov || ov===serverName;
+  });
+  const movedIn = [];
+  cfg.servers.forEach(s=>{
+    if(s.name===serverName) return;
+    s.tables.forEach(t=>{
+      if(overrides[String(t)]===serverName) movedIn.push(t);
+    });
+  });
+  return kept.concat(movedIn);
+}
+
+// Matched by seatId AND table together — a reservation's seatId (res_N) is
 // just its position in tonight's pulled list, so if the list is ever
 // re-pulled (new counts, a new day) that same id can land on a completely
 // different table. Requiring the table to match too means a stale
@@ -940,159 +977,159 @@ function projectedFullHouseCovers(cfgKey){
 }
 
 // Ideal distribution: the floor is one physical left-to-right sequence of
-     // tables (matching the section order above), and split pairs like 15/15A
-     // always move together as one unit. This finds the split points that divide
-     // that sequence into exactly N contiguous, walkable runs — one per server —
-     // that come closest to an even guest count (least total squared deviation
-     // from the average). Because it optimizes across the whole floor at once
-     // instead of swapping one neighbor pair at a time, a big gap between, say,
-     // Server 1 and Server 5 gets closed by shifting boundaries through the
-     // servers in between, not just the one next to it — but no server ever ends
-     // up with tables scattered outside its own stretch of the room. Pool tables
-     // (bar/patio) are left exactly as currently assigned — their guest counts
-     // are added on top as a fixed starting load per server before the split
-     // points are chosen, so the final numbers stay balanced including pool
+// tables (matching the section order above), and split pairs like 15/15A
+// always move together as one unit. This finds the split points that divide
+// that sequence into exactly N contiguous, walkable runs — one per server —
+// that come closest to an even guest count (least total squared deviation
+// from the average). Because it optimizes across the whole floor at once
+// instead of swapping one neighbor pair at a time, a big gap between, say,
+// Server 1 and Server 5 gets closed by shifting boundaries through the
+// servers in between, not just the one next to it — but no server ever ends
+// up with tables scattered outside its own stretch of the room. Pool tables
+// (bar/patio) are left exactly as currently assigned — their guest counts
+// are added on top as a fixed starting load per server before the split
+// points are chosen, so the final numbers stay balanced including pool
 // guests too. idealLoad (the per-server target total) is shown in the
-       // Analytics table as a number to aim for; unitAssign/idealAssign are kept
-       // for other callers but are no longer used to suggest moving whole tables
-       // between servers — see computeSeatingRebalance below for how the target is
-                                                   // actually reached (by reassigning specific parties, not tables).
-     function computeIdealDistribution(cfgKey){
-            const cfg = CONFIGS[cfgKey];
-            function buildUnits(tables){
-                 const units = [];
-         for(let i=0;i<tables.length;i++){
-           const t = tables[i];
-           const ts = String(t);
-                    if(/[A-Z]$/.test(ts)) continue; // consumed by its base table below
-                    const unit = [t];
-                         let j = i+1;
-                    while(j<tables.length && String(tables[j])===ts+"A"){ unit.push(tables[j]); j++; }
-                    units.push(unit);
-                    i = j-1;
-         }
-                     return units;
-            }
-            const poolBy = {}; cfg.servers.forEach(s=>poolBy[s.name]=0);
-            const poolTablesBy = {}; cfg.servers.forEach(s=>poolTablesBy[s.name]=[]);
-            POOL.forEach(p=>{
-                                          const a = getVal(cfgKey,p.t,'assign');
-                     if(a && poolBy[a]!==undefined){ poolBy[a]+=guestTotal(cfgKey,p.t); poolTablesBy[a].push(p.t); }
-            });
-            const allTables = [];
-            cfg.servers.forEach(s=>s.tables.forEach(t=>allTables.push(t)));
-            const units = buildUnits(allTables).map(u=>({
-                     tables: u,
-                     total: u.reduce((a,t)=>a+guestTotal(cfgKey,t),0),
-            }));
-       const M = units.length, N = cfg.servers.length;
-            const prefix = [0];
-            for(let i=0;i<M;i++) prefix.push(prefix[i]+units[i].total);
-            const segSum = (a,b)=>prefix[b]-prefix[a];
-            const grandTotal = prefix[M] + cfg.servers.reduce((a,s)=>a+poolBy[s.name],0);
-            const avg = N>0 ? grandTotal/N : 0;
-            // Split the M units into N contiguous, non-empty runs (floor order) that
-            // minimize total squared deviation from the average load — a big gap can
-            // ripple its fix through several boundaries, but every run stays intact.
-            const NEG = Infinity;
-            const dp = Array.from({length:N+1}, ()=>new Array(M+1).fill(NEG));
-            const back = Array.from({length:N+1}, ()=>new Array(M+1).fill(-1));
-            dp[0][0] = 0;
-            for(let j=1;j<=N;j++){
-                     const poolLoad = poolBy[cfg.servers[j-1].name];
-                     for(let i=1;i<=M;i++){
-                                for(let k=0;k<i;k++){
-                                             if(dp[j-1][k]===NEG) continue;
-                                             const segTotal = segSum(k,i) + poolLoad;
-                                             const cost = dp[j-1][k] + (segTotal-avg)*(segTotal-avg);
-                                             if(cost < dp[j][i]){ dp[j][i]=cost; back[j][i]=k; }
-     }
-                     }
-            }
-       let i = M, j = N;
-           const cuts = [];
-       while(j>0){
-         const k = back[j][i];
-                cuts.unshift([k,i]);
-                 i = k; j--;
-     }
-       const idealLoad = {}, idealAssign = {}, unitAssign = {};
-            cfg.servers.forEach((s,idx)=>{
-                     const [a,b] = cuts[idx] || [0,0];
-                     const segUnits = units.slice(a,b);
-                     const tables = segUnits.flatMap(u=>u.tables);
-                     unitAssign[s.name] = tables;
-                     idealLoad[s.name] = segSum(a,b) + poolBy[s.name];
-                     idealAssign[s.name] = tables.concat(poolTablesBy[s.name]);
-            });
-            return { idealLoad, idealAssign, unitAssign };
-     }
+// Analytics table as a number to aim for; unitAssign/idealAssign are kept
+// for other callers but are no longer used to suggest moving whole tables
+// between servers — see computeSeatingRebalance below for how the target is
+// actually reached (by reassigning specific parties, not tables).
+function computeIdealDistribution(cfgKey){
+  const cfg = CONFIGS[cfgKey];
+  function buildUnits(tables){
+    const units = [];
+    for(let i=0;i<tables.length;i++){
+      const t = tables[i];
+      const ts = String(t);
+      if(/[A-Z]$/.test(ts)) continue; // consumed by its base table below
+      const unit = [t];
+      let j = i+1;
+      while(j<tables.length && String(tables[j])===ts+"A"){ unit.push(tables[j]); j++; }
+      units.push(unit);
+      i = j-1;
+    }
+    return units;
+  }
+  const poolBy = {}; cfg.servers.forEach(s=>poolBy[s.name]=0);
+  const poolTablesBy = {}; cfg.servers.forEach(s=>poolTablesBy[s.name]=[]);
+  POOL.forEach(p=>{
+    const a = getVal(cfgKey,p.t,'assign');
+    if(a && poolBy[a]!==undefined){ poolBy[a]+=guestTotal(cfgKey,p.t); poolTablesBy[a].push(p.t); }
+  });
+  const allTables = [];
+  cfg.servers.forEach(s=>s.tables.forEach(t=>allTables.push(t)));
+  const units = buildUnits(allTables).map(u=>({
+    tables: u,
+    total: u.reduce((a,t)=>a+guestTotal(cfgKey,t),0),
+  }));
+  const M = units.length, N = cfg.servers.length;
+  const prefix = [0];
+  for(let i=0;i<M;i++) prefix.push(prefix[i]+units[i].total);
+  const segSum = (a,b)=>prefix[b]-prefix[a];
+  const grandTotal = prefix[M] + cfg.servers.reduce((a,s)=>a+poolBy[s.name],0);
+  const avg = N>0 ? grandTotal/N : 0;
+  // Split the M units into N contiguous, non-empty runs (floor order) that
+  // minimize total squared deviation from the average load — a big gap can
+  // ripple its fix through several boundaries, but every run stays intact.
+  const NEG = Infinity;
+  const dp = Array.from({length:N+1}, ()=>new Array(M+1).fill(NEG));
+  const back = Array.from({length:N+1}, ()=>new Array(M+1).fill(-1));
+  dp[0][0] = 0;
+  for(let j=1;j<=N;j++){
+    const poolLoad = poolBy[cfg.servers[j-1].name];
+    for(let i=1;i<=M;i++){
+      for(let k=0;k<i;k++){
+        if(dp[j-1][k]===NEG) continue;
+        const segTotal = segSum(k,i) + poolLoad;
+        const cost = dp[j-1][k] + (segTotal-avg)*(segTotal-avg);
+        if(cost < dp[j][i]){ dp[j][i]=cost; back[j][i]=k; }
+      }
+    }
+  }
+  let i = M, j = N;
+  const cuts = [];
+  while(j>0){
+    const k = back[j][i];
+    cuts.unshift([k,i]);
+    i = k; j--;
+  }
+  const idealLoad = {}, idealAssign = {}, unitAssign = {};
+  cfg.servers.forEach((s,idx)=>{
+    const [a,b] = cuts[idx] || [0,0];
+    const segUnits = units.slice(a,b);
+    const tables = segUnits.flatMap(u=>u.tables);
+    unitAssign[s.name] = tables;
+    idealLoad[s.name] = segSum(a,b) + poolBy[s.name];
+    idealAssign[s.name] = tables.concat(poolTablesBy[s.name]);
+  });
+  return { idealLoad, idealAssign, unitAssign };
+}
 
 // Suggests specific reservations/walk-ins to hand off to a lighter server
-     // tonight, using the existing per-seating Live Reassignment mechanism —
-     // NEVER by moving a whole table between servers. Every section's table
-     // numbers stay exactly the same all night (Server 1 is always Server 1's
-     // own tables); only which server gets credit for a given party's guest
-     // count changes. Greedy: repeatedly hands a seating from whichever server
-     // is currently heaviest to whichever is currently lightest, preferring one
-     // that fits the gap without overshooting, until the gap can't usefully
-     // shrink any further. Seatings already reassigned by hand tonight are left
-     // alone (never re-suggested or double-counted); pool tables are untouched
-     // (their assignment is manual only).
-     function computeSeatingRebalance(cfgKey){
-            const cfg = CONFIGS[cfgKey];
-            const allTables = [];
-            cfg.servers.forEach(s=>s.tables.forEach(t=>allTables.push(t)));
-            const seatings = [];
-            allTables.forEach(t=>{
-                     tableSeatings(cfgKey,t).forEach(seat=>{
-                                const owner = seatOwnerServer(cfgKey,t,seat.seatId);
-                                if(!owner) return;
-                                const alreadyMoved = !!reassignedToFor(cfgKey,t,seat.seatId);
-                                seatings.push({ table:t, seatId:seat.seatId, time:seat.time, size:Number(seat.size)||0, guest:seat.guest, owner, alreadyMoved });
-                     });
-            });
-            const loads = {}; cfg.servers.forEach(s=>loads[s.name]=0);
-            seatings.forEach(se=>{ loads[se.owner] = (loads[se.owner]||0) + se.size; });
-            const movable = seatings.filter(se=>!se.alreadyMoved).sort((a,b)=>b.size-a.size);
-            const used = new Set();
-            const suggestions = [];
-            let guard = 0;
-            while(guard++ < 200){
-                     const names = cfg.servers.map(s=>s.name);
-                     const heaviest = names.reduce((a,b)=>loads[a]>=loads[b]?a:b);
-                     const lightest = names.reduce((a,b)=>loads[a]<=loads[b]?a:b);
-                     const gap = loads[heaviest]-loads[lightest];
-                     if(heaviest===lightest || gap<=1) break;
-                     const fitting = movable.find(se=>!used.has(se.seatId) && se.owner===heaviest && se.size<=gap);
-                     const cand = fitting || movable.find(se=>!used.has(se.seatId) && se.owner===heaviest);
-                     if(!cand) break;
-                     used.add(cand.seatId);
-                     suggestions.push({ ...cand, toServer: lightest });
-                     loads[heaviest] -= cand.size; loads[lightest] += cand.size;
-            }
-            return { loads, suggestions };
-     }
+// tonight, using the existing per-seating Live Reassignment mechanism —
+// NEVER by moving a whole table between servers. Every section's table
+// numbers stay exactly the same all night (Server 1 is always Server 1's
+// own tables); only which server gets credit for a given party's guest
+// count changes. Greedy: repeatedly hands a seating from whichever server
+// is currently heaviest to whichever is currently lightest, preferring one
+// that fits the gap without overshooting, until the gap can't usefully
+// shrink any further. Seatings already reassigned by hand tonight are left
+// alone (never re-suggested or double-counted); pool tables are untouched
+// (their assignment is manual only).
+function computeSeatingRebalance(cfgKey){
+  const cfg = CONFIGS[cfgKey];
+  const allTables = [];
+  cfg.servers.forEach(s=>s.tables.forEach(t=>allTables.push(t)));
+  const seatings = [];
+  allTables.forEach(t=>{
+    tableSeatings(cfgKey,t).forEach(seat=>{
+      const owner = seatOwnerServer(cfgKey,t,seat.seatId);
+      if(!owner) return;
+      const alreadyMoved = !!reassignedToFor(cfgKey,t,seat.seatId);
+      seatings.push({ table:t, seatId:seat.seatId, time:seat.time, size:Number(seat.size)||0, guest:seat.guest, owner, alreadyMoved });
+    });
+  });
+  const loads = {}; cfg.servers.forEach(s=>loads[s.name]=0);
+  seatings.forEach(se=>{ loads[se.owner] = (loads[se.owner]||0) + se.size; });
+  const movable = seatings.filter(se=>!se.alreadyMoved).sort((a,b)=>b.size-a.size);
+  const used = new Set();
+  const suggestions = [];
+  let guard = 0;
+  while(guard++ < 200){
+    const names = cfg.servers.map(s=>s.name);
+    const heaviest = names.reduce((a,b)=>loads[a]>=loads[b]?a:b);
+    const lightest = names.reduce((a,b)=>loads[a]<=loads[b]?a:b);
+    const gap = loads[heaviest]-loads[lightest];
+    if(heaviest===lightest || gap<=1) break;
+    const fitting = movable.find(se=>!used.has(se.seatId) && se.owner===heaviest && se.size<=gap);
+    const cand = fitting || movable.find(se=>!used.has(se.seatId) && se.owner===heaviest);
+    if(!cand) break;
+    used.add(cand.seatId);
+    suggestions.push({ ...cand, toServer: lightest });
+    loads[heaviest] -= cand.size; loads[lightest] += cand.size;
+  }
+  return { loads, suggestions };
+}
 
-     // Applies every suggested seating move above at once, the same way the
-     // "Move" button on each individual row does — via addReassignment, so
-     // tables themselves never change hands, only which server's count each
-     // moved party is credited to.
-     function applySeatingRebalance(cfgKey){
-            const cfg = CONFIGS[cfgKey];
-            const { suggestions } = computeSeatingRebalance(cfgKey);
-            if(!suggestions.length){ alert("Nothing to rebalance — sections are already close to even."); return; }
-            if(!confirm(`Apply ${suggestions.length} suggested seating move${suggestions.length===1?'':'s'} for ${cfg.label}?\n\nEach party listed moves to its suggested server's count for tonight. Tables stay exactly where they are — this never reassigns a whole table.`)) return;
-            if(!STATE.reassign[cfgKey]) STATE.reassign[cfgKey] = [];
-            const list = STATE.reassign[cfgKey];
-            suggestions.forEach(su=>{
-                     const idx = list.findIndex(r=>r.seatId===su.seatId);
-                     const entry = { seatId:su.seatId, table:String(su.table), time:su.time, size:su.size, guest:su.guest, toServer:su.toServer };
-                     if(idx>=0) list[idx] = entry; else list.push(entry);
-            });
-            saveState(STATE);
-            renderAll();
-     }
+// Applies every suggested seating move above at once, the same way the
+// "Move" button on each individual row does — via addReassignment, so
+// tables themselves never change hands, only which server's count each
+// moved party is credited to.
+function applySeatingRebalance(cfgKey){
+  const cfg = CONFIGS[cfgKey];
+  const { suggestions } = computeSeatingRebalance(cfgKey);
+  if(!suggestions.length){ alert("Nothing to rebalance — sections are already close to even."); return; }
+  if(!confirm(`Apply ${suggestions.length} suggested seating move${suggestions.length===1?'':'s'} for ${cfg.label}?\n\nEach party listed moves to its suggested server's count for tonight. Tables stay exactly where they are — this never reassigns a whole table.`)) return;
+  if(!STATE.reassign[cfgKey]) STATE.reassign[cfgKey] = [];
+  const list = STATE.reassign[cfgKey];
+  suggestions.forEach(su=>{
+    const idx = list.findIndex(r=>r.seatId===su.seatId);
+    const entry = { seatId:su.seatId, table:String(su.table), time:su.time, size:su.size, guest:su.guest, toServer:su.toServer };
+    if(idx>=0) list[idx] = entry; else list.push(entry);
+  });
+  saveState(STATE);
+  renderAll();
+}
 
 function computeAnalytics(cfgKey){
   const cfg = CONFIGS[cfgKey];
@@ -1130,8 +1167,8 @@ function computeAnalytics(cfgKey){
   const avgGuestPerServer = cfg.servers.length ? Math.round(allGuests/cfg.servers.length) : 0;
   const covers = projectedFullHouseCovers(cfgKey);
 
-    const { idealLoad } = computeIdealDistribution(cfgKey);
-         const { suggestions: seatMoves } = computeSeatingRebalance(cfgKey);
+  const { idealLoad } = computeIdealDistribution(cfgKey);
+  const { suggestions: seatMoves } = computeSeatingRebalance(cfgKey);
 
   let html = `<div class="dash"><h2>📊 Analytics — ${cfg.label}</h2>
     <div class="dash-grid">
@@ -1174,27 +1211,27 @@ function computeAnalytics(cfgKey){
         : '<tr><td colspan="3" class="left" style="color:#888">No table has reached a 2nd turn yet</td></tr>'}
     </table>
 
-                    <table class="ideal-table"><caption>Section Load Target — a suggested guest-count balance to aim for; each section's own tables never change, only the total</caption>
-                          <tr><th>Section</th><th>Current Total</th><th>Suggested Target</th><th>Difference</th></tr>
-                                ${cfg.servers.map(s=>{
-                                             const cur = sectionRows.find(r=>r.name===s.name).total;
-                                             const ideal = idealLoad[s.name];
-                                             const diff = ideal-cur;
-                                             const diffHtml = diff===0 ? '0' : (diff>0? `<span class="diff-up">+${diff}</span>` : `<span class="diff-down">${diff}</span>`);
-                                             return `<tr><td class="left"><b>${getServerDisplayName(cfgKey,s.name)}</b></td><td>${cur}</td><td>${ideal}</td><td>${diffHtml}</td></tr>`;
-                                }).join("")}
-                                    </table>
+    <table class="ideal-table"><caption>Section Load Target — a suggested guest-count balance to aim for; each section's own tables never change, only the total</caption>
+      <tr><th>Section</th><th>Current Total</th><th>Suggested Target</th><th>Difference</th></tr>
+      ${cfg.servers.map(s=>{
+        const cur = sectionRows.find(r=>r.name===s.name).total;
+        const ideal = idealLoad[s.name];
+        const diff = ideal-cur;
+        const diffHtml = diff===0 ? '0' : (diff>0? `<span class="diff-up">+${diff}</span>` : `<span class="diff-down">${diff}</span>`);
+        return `<tr><td class="left"><b>${getServerDisplayName(cfgKey,s.name)}</b></td><td>${cur}</td><td>${ideal}</td><td>${diffHtml}</td></tr>`;
+      }).join("")}
+    </table>
 
-                                        <table class="ideal-table"><caption>Suggested Seating Moves — hands specific reservations/walk-ins to a lighter server's count for tonight; tables themselves never change hands
-                                              <button class="action" style="padding:3px 10px;font-size:11px;margin-left:10px;" onclick="applySeatingRebalance('${cfgKey}')">Apply All Suggested Moves</button>
-                                                  </caption>
-                                                        <tr><th>Table</th><th>Time</th><th>Size</th><th>Guest</th><th>From</th><th>To</th><th></th></tr>
-                                                              ${seatMoves.length ? seatMoves.map(m=>`<tr>
-                                                                      <td>${m.table}</td><td>${m.time}</td><td>${m.size}</td><td class="left">${m.guest||''}</td>
-                                                                              <td class="left">${getServerDisplayName(cfgKey,m.owner)}</td><td class="left"><b>${getServerDisplayName(cfgKey,m.toServer)}</b></td>
-                                                                                      <td><button class="action" style="padding:2px 6px;font-size:10.5px;" onclick="addReassignment('${cfgKey}',${jsStr(m.table)},${jsStr(m.seatId)},${jsStr(m.time)},${m.size},${jsStr(m.guest||'')},'${m.toServer}')">Move</button></td>
-                                                                                            </tr>`).join("") : '<tr><td colspan="7" class="left" style="color:#888">Sections are already close to even — nothing to suggest.</td></tr>'}
-                                                                                                </table>
+    <table class="ideal-table"><caption>Suggested Seating Moves — hands specific reservations/walk-ins to a lighter server's count for tonight; tables themselves never change hands
+      <button class="action" style="padding:3px 10px;font-size:11px;margin-left:10px;" onclick="applySeatingRebalance('${cfgKey}')">Apply All Suggested Moves</button>
+    </caption>
+      <tr><th>Table</th><th>Time</th><th>Size</th><th>Guest</th><th>From</th><th>To</th><th></th></tr>
+      ${seatMoves.length ? seatMoves.map(m=>`<tr>
+        <td>${m.table}</td><td>${m.time}</td><td>${m.size}</td><td class="left">${m.guest||''}</td>
+        <td class="left">${getServerDisplayName(cfgKey,m.owner)}</td><td class="left"><b>${getServerDisplayName(cfgKey,m.toServer)}</b></td>
+        <td><button class="action" style="padding:2px 6px;font-size:10.5px;" onclick="addReassignment('${cfgKey}',${jsStr(m.table)},${jsStr(m.seatId)},${jsStr(m.time)},${m.size},${jsStr(m.guest||'')},'${m.toServer}')">Move</button></td>
+      </tr>`).join("") : '<tr><td colspan="7" class="left" style="color:#888">Sections are already close to even — nothing to suggest.</td></tr>'}
+    </table>
   </div>`;
   return html;
 }
@@ -1265,8 +1302,8 @@ function renderWalkinRecommendation(cfgKey){
 function renderPanel(cfgKey){
   const cfg = CONFIGS[cfgKey];
   const rec = renderWalkinRecommendation(cfgKey);
-    let html = cfgKey==='custom' ? renderCustomEditor() : '';
-       html += `<div class="dash" style="margin-bottom:14px;padding:10px 14px;">
+  let html = cfgKey==='custom' ? renderCustomEditor() : '';
+  html += `<div class="dash" style="margin-bottom:14px;padding:10px 14px;">
     <h2 style="margin:0 0 6px;">🚶 Next Walk-in Should Go To</h2>
     <div class="sub2" style="margin-bottom:8px;">Party size: <input type="number" min="1" max="20" value="${STATE.walkinPartySize||''}" style="width:56px;padding:3px;border:1px solid var(--border);border-radius:3px;text-align:center;" onchange="setWalkinPartySize(this.value)"> <span style="color:#888;">(leave blank to just see who's lightest-loaded)</span>
       ${rec.table ? `<button class="action" style="padding:4px 10px;font-size:11px;margin-left:8px;" onclick="seatWalkinAtBest('${cfgKey}')">Seat here now</button>` : ''}</div>
@@ -1328,33 +1365,33 @@ function renderPanel(cfgKey){
   </table>`;
 
   cfg.servers.forEach(s=>{
-         const effTables = effectiveTablesForServer(cfgKey, s.name);
-           html += `<table><caption>${getServerDisplayName(cfgKey,s.name).toUpperCase()} — GUEST COUNT BY TABLE</caption>
-                 <tr><th>Table</th><th>Cap.</th><th>Seatings Tonight</th><th></th><th>Total Guests</th><th>Turns</th><th>Est. Free</th><th>Area</th><th>Split Table</th><th>Assigned Server</th><th>Notes</th></tr>`;
-           effTables.forEach(t=>{ html += renderTableRow(cfgKey, t, "DINING ROOM", effTables, getServerDisplayName(cfgKey,s.name), "section"); });
-           const sg1 = serverBlockTotal(cfgKey, s.name, 0), sg2 = serverBlockTotal(cfgKey, s.name, 1), sg3 = serverBlockTotal(cfgKey, s.name, 2);
-           const {total: sTotal, turns: sTurns} = serverTotal(cfgKey, s);
-           html += `<tr style="background:#eef1f7;font-weight:600;">
-                 <td colspan="2" class="left">SECTION TOTAL</td>
-                       <td class="left" style="font-size:11px;font-weight:normal;color:#555;">4-6: ${sg1} · 6-8: ${sg2} · 8-Close: ${sg3}</td>
-                             <td></td>
-                                   <td>${sTotal}</td><td>${sTurns}</td>
-                                         <td colspan="5"></td>
-                                             </tr>`;
-           html += `</table>`;
-           // Whole-table moves now show up directly in the section's own table list
-           // above (with an inline "moved" tag on the row), so only per-seating Live
-           // Reassignments — which stay physically on a table that belongs
-           // elsewhere — still need a separate note here.
-           const incoming = (STATE.reassign[cfgKey]||[]).filter(r=>r.toServer===s.name && defaultOwnerOfTable(cfgKey,r.table)!==s.name);
-           const outgoing = (STATE.reassign[cfgKey]||[]).filter(r=>defaultOwnerOfTable(cfgKey,r.table)===s.name && r.toServer!==s.name);
-           if(incoming.length || outgoing.length){
-                      html += `<div class="sub2" style="margin:-8px 0 14px 4px;color:#888;">`;
-                      if(incoming.length) html += `<span class="suggest">Seating moved in:</span> ${incoming.map(r=>`Table ${r.table} (${r.time}, from ${getServerDisplayName(cfgKey,defaultOwnerOfTable(cfgKey,r.table))})`).join(", ")}`;
-                      if(incoming.length && outgoing.length) html += ` &nbsp;·&nbsp; `;
-                      if(outgoing.length) html += `<span class="suggest">Seating moved out:</span> ${outgoing.map(r=>`Table ${r.table} (${r.time}, to ${getServerDisplayName(cfgKey,r.toServer)})`).join(", ")}`;
-                      html += `</div>`;
-           }
+    const effTables = effectiveTablesForServer(cfgKey, s.name);
+    html += `<table><caption>${getServerDisplayName(cfgKey,s.name).toUpperCase()} — GUEST COUNT BY TABLE</caption>
+      <tr><th>Table</th><th>Cap.</th><th>Seatings Tonight</th><th></th><th>Total Guests</th><th>Turns</th><th>Est. Free</th><th>Area</th><th>Split Table</th><th>Assigned Server</th><th>Notes</th></tr>`;
+    effTables.forEach(t=>{ html += renderTableRow(cfgKey, t, "DINING ROOM", effTables, getServerDisplayName(cfgKey,s.name), "section"); });
+    const sg1 = serverBlockTotal(cfgKey, s.name, 0), sg2 = serverBlockTotal(cfgKey, s.name, 1), sg3 = serverBlockTotal(cfgKey, s.name, 2);
+    const {total: sTotal, turns: sTurns} = serverTotal(cfgKey, s);
+    html += `<tr style="background:#eef1f7;font-weight:600;">
+      <td colspan="2" class="left">SECTION TOTAL</td>
+      <td class="left" style="font-size:11px;font-weight:normal;color:#555;">4-6: ${sg1} · 6-8: ${sg2} · 8-Close: ${sg3}</td>
+      <td></td>
+      <td>${sTotal}</td><td>${sTurns}</td>
+      <td colspan="5"></td>
+    </tr>`;
+    html += `</table>`;
+    // Whole-table moves now show up directly in the section's own table list
+    // above (with an inline "moved" tag on the row), so only per-seating Live
+    // Reassignments — which stay physically on a table that belongs
+    // elsewhere — still need a separate note here.
+    const incoming = (STATE.reassign[cfgKey]||[]).filter(r=>r.toServer===s.name && defaultOwnerOfTable(cfgKey,r.table)!==s.name);
+    const outgoing = (STATE.reassign[cfgKey]||[]).filter(r=>defaultOwnerOfTable(cfgKey,r.table)===s.name && r.toServer!==s.name);
+    if(incoming.length || outgoing.length){
+      html += `<div class="sub2" style="margin:-8px 0 14px 4px;color:#888;">`;
+      if(incoming.length) html += `<span class="suggest">Seating moved in:</span> ${incoming.map(r=>`Table ${r.table} (${r.time}, from ${getServerDisplayName(cfgKey,defaultOwnerOfTable(cfgKey,r.table))})`).join(", ")}`;
+      if(incoming.length && outgoing.length) html += ` &nbsp;·&nbsp; `;
+      if(outgoing.length) html += `<span class="suggest">Seating moved out:</span> ${outgoing.map(r=>`Table ${r.table} (${r.time}, to ${getServerDisplayName(cfgKey,r.toServer)})`).join(", ")}`;
+      html += `</div>`;
+    }
   });
 
   // suggested server for pool = lowest current total
@@ -1365,7 +1402,7 @@ function renderPanel(cfgKey){
   html += `<table><caption>BAR 25-29 AND PATIO 30-34 — ASSIGN TO THE SERVER WITH THE LOWEST CURRENT LOAD
       <span class="suggest">(currently suggested: ${suggested})</span></caption>
       <tr><th>Table</th><th>Cap.</th><th>Seatings Tonight</th><th></th><th>Total Guests</th><th>Turns</th><th>Est. Free</th><th>Area</th><th>Split</th><th>Assigned Server</th><th>Notes</th></tr>`;
-    POOL.forEach(p=>{ html += renderTableRow(cfgKey, p.t, p.area, null, "", "pool"); });
+  POOL.forEach(p=>{ html += renderTableRow(cfgKey, p.t, p.area, null, "", "pool"); });
   html += `</table>`;
 
   html += computeAnalytics(cfgKey);
@@ -1431,7 +1468,7 @@ function renderReservationsPanel(cfgKey){
     return `<div class="dash"><h2>📋 Reservations</h2><div class="sub2">No reservation list pulled yet. Ask to have tonight's list fetched from OpenTable GuestCenter.</div></div>`;
   }
   let html = `<div class="dash"><h2>📋 Reservations — ${r.shiftLabel}</h2>
-    <div class="sub2" style="margin-bottom:10px;color:#888;">Pulled from OpenTable GuestCenter's reservation list (${r.parties} parties, ${r.covers} covers). This is a one-time snapshot, not a live feed — ask for it to be refreshed at the start of each shift.</div>
+    <div class="sub2" style="margin-bottom:10px;color:#888;">Pulled from OpenTable GuestCenter's reservation list (${r.parties} parties, ${r.covers} covers). <b>Last updated: ${r.lastUpdated || '—'}.</b> Refreshes automatically every hour, 12PM–10PM.</div>
     <table><caption>TONIGHT'S RESERVATIONS — SORTED BY TIME</caption>
     <tr><th>Time</th><th>Party</th><th>Guest</th><th>Table</th><th>Notes</th></tr>
     ${r.list.map(row=>`<tr>
@@ -1487,7 +1524,7 @@ function renderReservationsPanel(cfgKey){
 
 function renderAll(){
   syncCustomConfig();
-     const panels = document.getElementById("panels");
+  const panels = document.getElementById("panels");
   panels.innerHTML = "";
   Object.keys(CONFIGS).forEach(key=>{
     const div = document.createElement("div");
@@ -1574,8 +1611,8 @@ function checkNewDay(){
     STATE.data = {};
     STATE.walkins = {};
     STATE.reassign = {};
-          STATE.tableSection = {};
-      STATE.header = { date: today };
+    STATE.tableSection = {};
+    STATE.header = { date: today };
     saveState(STATE);
   } else if(!saved){
     STATE.header.date = today;
@@ -1602,8 +1639,8 @@ function bindHeader(){
           archiveDay(oldVal);
           STATE.data = {};
           STATE.walkins = {};
-                  STATE.reassign = {};
-        STATE.tableSection = {};
+          STATE.reassign = {};
+          STATE.tableSection = {};
         }
         STATE.header.date = newVal;
         saveState(STATE);
@@ -1618,7 +1655,7 @@ function bindHeader(){
 }
 
 document.getElementById("btn-reset").addEventListener("click", ()=>{
-    if(confirm("Reset all logged walk-ins, notes, pool assignments, section moves, and live reassignments? (Reservations stay — they come from OpenTable, not from here.)")){
+  if(confirm("Reset all logged walk-ins, notes, pool assignments, section moves, and live reassignments? (Reservations stay — they come from OpenTable, not from here.)")){
     STATE.data = {};
     STATE.walkins = {};
     STATE.reassign = {};
@@ -1642,7 +1679,7 @@ function seatingsCsvStr(cfgKey, table){
 document.getElementById("btn-export").addEventListener("click", ()=>{
   const cfg = CONFIGS[currentTab];
   const rows = [["Section","Table","Seatings Tonight","Total Guests","Turns","Area","Split","Assigned Server","Notes"]];
-    cfg.servers.forEach(s=>{
+  cfg.servers.forEach(s=>{
     s.tables.forEach(t=>{
       const dispName = getServerDisplayName(currentTab, effectiveTableOwner(currentTab, t) || s.name);
       rows.push([dispName, t, seatingsCsvStr(currentTab,t),
@@ -1675,74 +1712,82 @@ document.getElementById("btn-export").addEventListener("click", ()=>{
 });
 
 // Copy/Paste Data between devices — this app has no server, every device
-     // (desktop, tablet) keeps its own separate copy of the data in that
-     // browser's local storage. These two buttons are the manual bridge: "Copy
-     // Data" serializes everything into a text blob you copy to the clipboard,
-     // "Paste Data" reads a blob back in and completely replaces this device's
-     // data with it. Use this whenever a device (like the tablet) looks
-     // out-of-date compared to another.
-     function stateModalShow(){ document.getElementById("state-modal-overlay").style.display = "flex"; }
-     function stateModalHide(){ document.getElementById("state-modal-overlay").style.display = "none"; }
-     document.getElementById("state-modal-close").addEventListener("click", stateModalHide);
-     document.getElementById("state-modal-overlay").addEventListener("click", (e)=>{
-            if(e.target.id === "state-modal-overlay") stateModalHide();
-     });
-     
-     document.getElementById("btn-export-state").addEventListener("click", ()=>{
-            document.getElementById("state-modal-title").textContent = "Copy Data — send to another device";
-            document.getElementById("state-modal-desc").textContent = "Copy the text below (tap in the box, Select All, Copy), then on the other device tap \"Paste Data\" and paste it in.";
-            const ta = document.getElementById("state-modal-text");
-            ta.value = JSON.stringify(STATE);
-            ta.readOnly = true;
-            const btn = document.getElementById("state-modal-action");
-            btn.textContent = "Copy to Clipboard";
-            btn.onclick = ()=>{
-                     ta.focus(); ta.select();
-                     let ok = false;
-                     try{
-                                if(navigator.clipboard && navigator.clipboard.writeText){
-                                             navigator.clipboard.writeText(ta.value);
-                                             ok = true;
-                                }
-                     }catch(e){}
-                     if(!ok){
-                                try{ ok = document.execCommand("copy"); }catch(e){}
-                     }
-                     btn.textContent = ok ? "Copied ✓" : "Couldn't auto-copy — text is selected, copy manually";
-                     setTimeout(()=>{ btn.textContent = "Copy to Clipboard"; }, 2500);
-            };
-            stateModalShow();
-            ta.focus(); ta.select();
-     });
-     
-     document.getElementById("btn-import-state").addEventListener("click", ()=>{
-            document.getElementById("state-modal-title").textContent = "Paste Data — from another device";
-            document.getElementById("state-modal-desc").textContent = "Paste the text you copied from the other device below, then tap Import. This replaces ALL data on THIS device with it.";
-            const ta = document.getElementById("state-modal-text");
-            ta.value = "";
-            ta.readOnly = false;
-            const btn = document.getElementById("state-modal-action");
-            btn.textContent = "Import";
-            btn.onclick = ()=>{
-                     let parsed;
-                     try{ parsed = JSON.parse(ta.value); }
-                     catch(e){ alert("That doesn't look like valid pasted data. Make sure you copied the whole text from \"Copy Data\" on the other device."); return; }
-                     if(!parsed || typeof parsed !== "object"){ alert("That doesn't look like valid pasted data."); return; }
-                     if(!confirm("This will replace ALL data on this device with the pasted data. This can't be undone. Continue?")) return;
-                     STATE = parsed;
-                     saveState(STATE);
-                     stateModalHide();
-                     renderTabs();
-                     renderAll();
-                     alert("Import complete.");
-            };
-            stateModalShow();
-            ta.focus();
-     });
-     
-     bindHeader();
+// (desktop, tablet) keeps its own separate copy of the data in that
+// browser's local storage. These two buttons are the manual bridge: "Copy
+// Data" serializes everything into a text blob you copy to the clipboard,
+// "Paste Data" reads a blob back in and completely replaces this device's
+// data with it. Use this whenever a device (like the tablet) looks
+// out-of-date compared to another.
+function stateModalShow(){ document.getElementById("state-modal-overlay").style.display = "flex"; }
+function stateModalHide(){ document.getElementById("state-modal-overlay").style.display = "none"; }
+document.getElementById("state-modal-close").addEventListener("click", stateModalHide);
+document.getElementById("state-modal-overlay").addEventListener("click", (e)=>{
+  if(e.target.id === "state-modal-overlay") stateModalHide();
+});
+
+document.getElementById("btn-export-state").addEventListener("click", ()=>{
+  document.getElementById("state-modal-title").textContent = "Copy Data — send to another device";
+  document.getElementById("state-modal-desc").textContent = "Copy the text below (tap in the box, Select All, Copy), then on the other device tap \"Paste Data\" and paste it in.";
+  const ta = document.getElementById("state-modal-text");
+  ta.value = JSON.stringify(STATE);
+  ta.readOnly = true;
+  const btn = document.getElementById("state-modal-action");
+  btn.textContent = "Copy to Clipboard";
+  btn.onclick = ()=>{
+    ta.focus(); ta.select();
+    let ok = false;
+    try{
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(ta.value);
+        ok = true;
+      }
+    }catch(e){}
+    if(!ok){
+      try{ ok = document.execCommand("copy"); }catch(e){}
+    }
+    btn.textContent = ok ? "Copied ✓" : "Couldn't auto-copy — text is selected, copy manually";
+    setTimeout(()=>{ btn.textContent = "Copy to Clipboard"; }, 2500);
+  };
+  stateModalShow();
+  ta.focus(); ta.select();
+});
+
+document.getElementById("btn-import-state").addEventListener("click", ()=>{
+  document.getElementById("state-modal-title").textContent = "Paste Data — from another device";
+  document.getElementById("state-modal-desc").textContent = "Paste the text you copied from the other device below, then tap Import. This replaces ALL data on THIS device with it.";
+  const ta = document.getElementById("state-modal-text");
+  ta.value = "";
+  ta.readOnly = false;
+  const btn = document.getElementById("state-modal-action");
+  btn.textContent = "Import";
+  btn.onclick = ()=>{
+    let parsed;
+    try{ parsed = JSON.parse(ta.value); }
+    catch(e){ alert("That doesn't look like valid pasted data. Make sure you copied the whole text from \"Copy Data\" on the other device."); return; }
+    if(!parsed || typeof parsed !== "object"){ alert("That doesn't look like valid pasted data."); return; }
+    if(!confirm("This will replace ALL data on this device with the pasted data. This can't be undone. Continue?")) return;
+    STATE = parsed;
+    saveState(STATE);
+    stateModalHide();
+    renderTabs();
+    renderAll();
+    alert("Import complete.");
+  };
+  stateModalShow();
+  ta.focus();
+});
+
+bindHeader();
 renderTabs();
 renderAll();
+(function(){
+  const banner = document.getElementById("last-updated-banner");
+  if(banner){
+    banner.textContent = (RESERVATIONS_TODAY && RESERVATIONS_TODAY.lastUpdated)
+      ? `Reservations last updated: ${RESERVATIONS_TODAY.lastUpdated}`
+      : "";
+  }
+})();
 if(!STORAGE_OK){
   const w = document.getElementById("storage-warning");
   if(w) w.style.display = "block";
@@ -1750,4 +1795,3 @@ if(!STORAGE_OK){
 </script>
 </body>
 </html>
-
