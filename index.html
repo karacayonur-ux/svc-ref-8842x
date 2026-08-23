@@ -79,7 +79,7 @@
 
 <h1>The Address — Host Stand Book</h1>
 <div class="sub">Interactive version — reservations flow in automatically from OpenTable; log walk-ins with a real time as they're seated. Totals and load status calculate automatically. Auto-saves in your browser.</div>
-<div class="sub" id="last-updated-banner" style="font-weight:bold;color:var(--navy);"></div>
+<div id="last-updated-banner" style="display:inline-block;font-weight:bold;font-size:18px;color:var(--navy);background:#e8edf5;border:1px solid #c7d2e3;border-radius:6px;padding:6px 12px;margin-bottom:12px;"></div>
 <div id="storage-warning" style="display:none;background:#fff3cd;border:1px solid #e0b400;color:#6b5400;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:10px;">
   Auto-save isn't working in this browser (some browsers block this when the file is opened directly). Calculations still work, but your numbers will be cleared if you refresh the page.
 </div>
@@ -192,24 +192,27 @@ const POOL = [
 const RESERVATIONS_TODAY = {
   date: "2026-08-23",
   shiftLabel: "Sunday, August 23 · Dinner",
-  lastUpdated: "Aug 23, 4:05 PM",
-  covers: 54, parties: 15,
+  lastUpdated: "Aug 23, 5:10 PM",
+  covers: 66, parties: 18,
   list: [
-    {time:"5:00 PM", size:3, guest:"Ning Chiang", table:"16", notes:""},
-    {time:"6:00 PM", size:3, guest:"Michele Cascelli", table:"8", notes:"Birthday"},
-    {time:"6:00 PM", size:8, guest:"Gerri Russo", table:"21+", notes:"3 Birthdays · Pescatarian/Vegetarian"},
+    {time:"4:05 PM", size:3, guest:"Kristen Tarantola", table:"24", notes:""},
+    {time:"4:53 PM", size:3, guest:"Ning Chiang", table:"6", notes:""},
+    {time:"6:00 PM", size:3, guest:"Michele Cascelli", table:"14", notes:"Birthday"},
+    {time:"6:00 PM", size:8, guest:"Gerri Russo", table:"21+", notes:"Birthday · Pescatarian"},
     {time:"6:00 PM", size:3, guest:"Justine Schuurmans", table:"15", notes:"Birthday"},
     {time:"6:15 PM", size:3, guest:"Chapin Dobbins", table:"24", notes:"Birthday"},
-    {time:"6:30 PM", size:2, guest:"Steve A.", table:"16A", notes:""},
-    {time:"6:30 PM", size:4, guest:"Jeffrey Kranis", table:"14", notes:"Birthday"},
+    {time:"6:30 PM", size:2, guest:"Steve A.", table:"19A", notes:""},
+    {time:"6:30 PM", size:4, guest:"Jeffrey Kranis", table:"16", notes:"Birthday"},
     {time:"6:30 PM", size:2, guest:"Steven Melnick", table:"13", notes:""},
-    {time:"6:30 PM", size:2, guest:"David Sabella", table:"12", notes:"Gluten Free"},
-    {time:"6:30 PM", size:4, guest:"Thomas Williams", table:"17A", notes:""},
-    {time:"7:00 PM", size:4, guest:"Bilal .", table:"9", notes:"VIP · Friend of Owner"},
-    {time:"7:00 PM", size:2, guest:"Randi Fain", table:"5", notes:""},
-    {time:"7:00 PM", size:2, guest:"Jake Reynolds", table:"10", notes:""},
+    {time:"6:30 PM", size:2, guest:"Ewa Meloro", table:"12", notes:"Date Night"},
+    {time:"6:30 PM", size:2, guest:"David Sabella", table:"10", notes:"Gluten Free"},
+    {time:"6:30 PM", size:4, guest:"Thomas Williams", table:"17", notes:""},
+    {time:"7:00 PM", size:4, guest:"Bilal .", table:"9", notes:"VIP"},
+    {time:"7:00 PM", size:7, guest:"Christina Bohn", table:"6+", notes:"Outside maybe"},
+    {time:"7:00 PM", size:2, guest:"Randi Fain", table:"19", notes:""},
+    {time:"7:00 PM", size:2, guest:"Jake Reynolds", table:"11", notes:""},
     {time:"7:30 PM", size:10, guest:"chhaya chabba", table:"1+", notes:""},
-    {time:"7:30 PM", size:2, guest:"Diana Kosel", table:"11", notes:""},
+    {time:"7:30 PM", size:2, guest:"Diana Kosel", table:"8", notes:""},
   ],
 };
 
