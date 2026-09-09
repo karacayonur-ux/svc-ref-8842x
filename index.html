@@ -701,6 +701,23 @@ function moveTableToServer(cfgKey, table, toServer){
 // server's card, so a moved table shows up settled in its new section
 // (with its own inline "moved" tag) instead of staying listed under its old
 // section with a separate "Table moved in/out" footnote to cross-reference.
+// Sort key for a table label so plain numeric order holds (1,2,3...24) with
+// split tables ("15A") slotting in right after their base table ("15") and
+// before the next one ("16") — used any time a section's table list is
+// rebuilt (e.g. after a table is moved in from another server) so the
+// section stays in reading order instead of showing moved-in tables
+// tacked on at the bottom.
+function tableSortKey(t){
+  const s = String(t);
+  const m = s.match(/^(\d+)([A-Za-z]*)$/);
+  if(m) return [parseInt(m[1],10), m[2]];
+  return [Infinity, s];
+}
+function byTableOrder(a,b){
+  const ka = tableSortKey(a), kb = tableSortKey(b);
+  return ka[0]-kb[0] || ka[1].localeCompare(kb[1]);
+}
+
 function effectiveTablesForServer(cfgKey, serverName){
   const cfg = CONFIGS[cfgKey];
   const server = cfg.servers.find(s=>s.name===serverName);
@@ -717,7 +734,7 @@ function effectiveTablesForServer(cfgKey, serverName){
       if(overrides[String(t)]===serverName) movedIn.push(t);
     });
   });
-  return kept.concat(movedIn);
+  return kept.concat(movedIn).sort(byTableOrder);
 }
 
 // Matched by seatId AND table together — a reservation's seatId (res_N) is
