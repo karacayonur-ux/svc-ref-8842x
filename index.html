@@ -440,40 +440,111 @@ function setComboTables(cfgKey, table, seatId, val){
   renderAll();
 }
 
-// Best-effort starting point only — picks the nearest-numbered free tables
-// (closest to the source table's own number, since 1-7 is the flexible zone
-// tables actually get pushed together in) with enough combined max capacity
-// to cover the shortfall, skipping any table with an overlapping seating of
-// its own. The hostess confirms or corrects this against how the floor is
-// actually combined tonight — it is only ever a suggestion, never applied
-// automatically.
+// Physically pushable groups — confirmed by the restaurant so far, only the
+// 1-7 zone. A combo may only ever be an UNBROKEN run inside one of these
+// chains (e.g. 4,5,6,7 is valid; 4,6 skipping 5 is not, and nothing outside
+// a chain has a known combo partner at all — a table like 14 does NOT
+// combine with 13 just because the numbers are next to each other; they're
+// in separate rows on the actual floor). Add a chain here only once the
+// restaurant confirms that run of tables physically pushes together.
+const COMBINABLE_CHAINS = [
+  [1,2,3,4,5,6,7],
+];
+function combinableChainFor(table){
+  const n = Number(table);
+  return COMBINABLE_CHAINS.find(chain=>chain.includes(n)) || null;
+}
+function tableFreeForWindow(cfgKey, table, windowStart, windowEnd){
+  const seats = tableSeatings(cfgKey, table);
+  return !seats.some(s=>{
+    const sEnd = s.min + turnDurationMinutes(s.size);
+    return s.min < windowEnd && sEnd > windowStart; // overlaps
+  });
+}
+
+// Best-effort starting point only — for a source table inside a confirmed
+// chain, grows an UNBROKEN run outward from the source (alternating right
+// then left, same as physically sliding tables together) stopping at the
+// first already-occupied table or the end of the chain, until the combined
+// max capacity covers the whole party. Never skips a table and never
+// reaches outside the source table's own chain. Returns [] if the source
+// table isn't in any known chain, or [] with a short combined total if the
+// chain runs out before covering the party (caller falls back to
+// suggestMoveTable in that case). The hostess confirms or corrects this
+// against how the floor is actually combined tonight — it is only ever a
+// suggestion, never applied automatically.
 function suggestComboTables(cfgKey, seating){
-  const cfg = CONFIGS[cfgKey];
-  if(!cfg) return [];
-  const srcNum = parseInt(seating.table, 10);
-  const allTables = [];
-  cfg.servers.forEach(s=>s.tables.forEach(t=>allTables.push(t)));
+  const chain = combinableChainFor(seating.table);
+  if(!chain) return [];
+  const srcNum = Number(seating.table);
+  const srcIdx = chain.indexOf(srcNum);
+  if(srcIdx===-1) return [];
   const windowStart = seating.min, windowEnd = seating.min + turnDurationMinutes(seating.size);
-  const candidates = allTables
-    .filter(t=>String(t)!==String(seating.table) && /^\d+$/.test(String(t)))
-    .filter(t=>{
-      const seats = tableSeatings(cfgKey, t);
-      return !seats.some(s=>{
-        const sEnd = s.min + turnDurationMinutes(s.size);
-        return s.min < windowEnd && sEnd > windowStart; // overlaps this party's stay
-      });
-    })
-    .sort((a,b)=>Math.abs(Number(a)-srcNum) - Math.abs(Number(b)-srcNum));
+  const srcCap = tableCapacity(srcNum);
+  let total = srcCap ? srcCap.max : 0;
+  let lo = srcIdx, hi = srcIdx, canRight = true, canLeft = true;
   const picked = [];
-  let cap = 0;
-  for(const t of candidates){
-    if(cap >= seating.extra) break;
-    const c = tableCapacity(t);
-    if(!c) continue;
-    picked.push(t);
-    cap += c.max;
+  while(total < seating.size && (canRight || canLeft)){
+    if(canRight){
+      if(hi+1 < chain.length && tableFreeForWindow(cfgKey, chain[hi+1], windowStart, windowEnd)){
+        hi++; picked.push(chain[hi]);
+        const c = tableCapacity(chain[hi]); total += c ? c.max : 0;
+      } else canRight = false;
+    }
+    if(total >= seating.size) break;
+    if(canLeft){
+      if(lo-1 >= 0 && tableFreeForWindow(cfgKey, chain[lo-1], windowStart, windowEnd)){
+        lo--; picked.unshift(chain[lo]);
+        const c = tableCapacity(chain[lo]); total += c ? c.max : 0;
+      } else canLeft = false;
+    }
   }
   return picked;
+}
+
+// When the source table has no known combinable neighbor (or its chain runs
+// out before covering the party), the right fix isn't a combo at all — it's
+// reseating the whole reservation at a different, already-big-enough table.
+// This only ever suggests it; actually moving the reservation still has to
+// happen in OpenTable itself (reservations here are read-only, pulled
+// straight from OpenTable), so the suggested table also gets blocked from
+// walk-ins once confirmed, as a placeholder until that move is made there.
+function suggestMoveTable(cfgKey, seating){
+  const cfg = CONFIGS[cfgKey];
+  if(!cfg) return null;
+  const windowStart = seating.min, windowEnd = seating.min + turnDurationMinutes(seating.size);
+  const allTables = [];
+  cfg.servers.forEach(s=>s.tables.forEach(t=>allTables.push(t)));
+  const candidates = allTables
+    .filter(t=>String(t)!==String(seating.table) && /^\d+$/.test(String(t)))
+    .map(t=>({ t, cap: tableCapacity(t) }))
+    .filter(x=>x.cap && x.cap.max >= seating.size)
+    .filter(x=>tableFreeForWindow(cfgKey, x.t, windowStart, windowEnd))
+    .sort((a,b)=>a.cap.max-b.cap.max); // smallest table that still fits = best use of space
+  return candidates.length ? candidates[0].t : null;
+}
+
+// Decides, per oversized seating, whether the fix is "combine with these
+// tables" (source table has a confirmed chain and it covers the party) or
+// "move to this table instead" (no chain, or the chain isn't big enough).
+function suggestFix(cfgKey, seating){
+  const chain = combinableChainFor(seating.table);
+  if(chain){
+    const combo = suggestComboTables(cfgKey, seating);
+    const srcCap = tableCapacity(Number(seating.table));
+    const total = (srcCap?srcCap.max:0) + combo.reduce((a,t)=>{ const c=tableCapacity(t); return a+(c?c.max:0); }, 0);
+    if(total >= seating.size) return { type:"combo", tables:combo };
+    if(combo.length){
+      // Found a run, but even the whole thing (blocked by an already-occupied
+      // table or the chain's edge) doesn't cover the party — still worth
+      // surfacing so the hostess sees exactly how short it is, rather than
+      // a bare "nothing available".
+      return { type:"partial", tables:combo, total, shortBy: seating.size-total };
+    }
+  }
+  const moveTable = suggestMoveTable(cfgKey, seating);
+  if(moveTable!==null) return { type:"move", table:moveTable };
+  return { type:"none" };
 }
 
 // Which tables are currently tied up as overflow for someone else's
@@ -1016,14 +1087,14 @@ function renderTableRow(cfgKey, table, area, list, assignedServer, mode){
 function renderSeatingsCell(cfgKey, table){
   const seats = tableSeatings(cfgKey, table);
   const blocks = comboBlocksForTable(cfgKey, table);
-  const blockLines = blocks.map(b=>`<div style="white-space:nowrap;color:#a32d2d;">🔒 Blocked — combined with Table ${b.table} (${b.time} · ${b.guest||'party of '+b.size})</div>`).join("");
+  const blockLines = blocks.map(b=>`<div style="white-space:nowrap;color:#a32d2d;">🔒 Blocked — for Table ${b.table}'s party (${b.time} · ${b.guest||'party of '+b.size})</div>`).join("");
   if(!seats.length) return blockLines || `<span style="color:#aaa;">—</span>`;
   const seatLines = seats.map(s=>{
     const to = reassignedToFor(cfgKey, table, s.seatId);
     const moveTag = to ? ` <span class="suggest">→ ${to}</span>` : '';
     const cap = tableCapacity(/^\d+$/.test(String(table)) ? Number(table) : table);
     const overCap = cap && s.size > cap.max;
-    const overTag = overCap ? ` <span style="color:#a32d2d;font-weight:bold;">⚠ needs +${s.size-cap.max} — see combo below</span>` : '';
+    const overTag = overCap ? ` <span style="color:#a32d2d;font-weight:bold;">⚠ needs +${s.size-cap.max} — see fix below</span>` : '';
     if(s.source==="walkin"){
       const label = s.guest && s.guest!=="Walk-in" ? `Walk-in (${s.guest})` : "Walk-in";
       return `<div style="white-space:nowrap;">${s.time} · ${s.size} · <span style="color:#0a6e0a;">${label}</span>${moveTag}${overTag} <a href="#" onclick="removeWalkin('${cfgKey}','${s.id}');return false;" style="color:#a32d2d;text-decoration:none;">✕</a></div>`;
@@ -1479,24 +1550,36 @@ function renderPanel(cfgKey){
   const rec = renderWalkinRecommendation(cfgKey);
   let html = cfgKey==='custom' ? renderCustomEditor() : '';
   // A party bigger than its table's own max (like a 15-top landing on a
-  // 4-top "5+" table) needs extra tables physically pushed into service —
-  // flagged here from cover count alone, with a suggested combo the hostess
-  // confirms or corrects. Once confirmed, those extra tables show as
-  // blocked on their own row and drop out of walk-in suggestions above.
+  // 4-top "5+" table) needs a fix — either extra tables physically pushed
+  // together (only ever an unbroken run inside a confirmed chain like 1-7,
+  // e.g. "4,5,6,7" — never skipping a table, and never a table with no known
+  // combinable neighbor, like 14 next to 13) or, when no such combo covers
+  // the party, moving the whole reservation to a different single table
+  // that's already big enough. suggestFix decides which applies; the
+  // hostess confirms or corrects it either way. Once confirmed, the
+  // relevant table(s) show as blocked on their own row and drop out of
+  // walk-in suggestions above.
   const oversized = cfg ? oversizedSeatings(cfgKey) : [];
   if(oversized.length){
     html += `<div class="dash" style="margin-bottom:14px;padding:10px 14px;border-color:#e0b400;">
-      <h2 style="margin:0 0 6px;color:#a32d2d;">⚠️ Oversized Parties — Need Table Combos</h2>
-      <div class="sub2" style="margin-bottom:8px;color:#888;">These reservations are bigger than their table's max seats. Confirm which extra table(s) are being pushed together to seat them — table numbers closest to the source table are suggested first, but only you know how the floor is actually combined tonight. Once confirmed, those extra tables are blocked from walk-in suggestions.</div>
-      <table><tr><th>Table</th><th>Time</th><th>Guest</th><th>Party</th><th>Table Max</th><th>Extra Needed</th><th>Combo Tables</th></tr>
+      <h2 style="margin:0 0 6px;color:#a32d2d;">⚠️ Oversized Parties — Need a Fix</h2>
+      <div class="sub2" style="margin-bottom:8px;color:#888;">These reservations are bigger than their table's max seats. Tables only combine as an unbroken run within a confirmed zone (currently just 1-7) — never skipping a table, and never a table with no known combo partner. Where no combo covers the party, moving the whole reservation to a bigger open table is suggested instead (still has to be done in OpenTable itself). Confirm or correct either way — once confirmed, the extra/target table is blocked from walk-in suggestions.</div>
+      <table><tr><th>Table</th><th>Time</th><th>Guest</th><th>Party</th><th>Table Max</th><th>Needed</th><th>Fix</th></tr>
       ${oversized.map(o=>{
         const confirmed = getComboTables(cfgKey, o.table, o.seatId);
-        const suggestion = confirmed || suggestComboTables(cfgKey, o);
+        const fix = suggestFix(cfgKey, o);
+        const suggestion = confirmed || (fix.type==="combo" ? fix.tables : fix.type==="partial" ? fix.tables : fix.type==="move" ? [fix.table] : []);
         const val = (suggestion || []).join(", ");
         const statusTag = confirmed ? '<span class="suggest">confirmed</span>' : '<span class="sub2" style="color:#888;">suggested — confirm</span>';
+        const fixLabel = confirmed
+          ? ''
+          : fix.type==="combo" ? `<div class="sub2" style="color:#888;">Combine with (Table ${o.table} run):</div>`
+          : fix.type==="partial" ? `<div class="sub2" style="color:#a32d2d;">Table ${o.table} run only covers ${fix.total} of ${o.size} — still short ${fix.shortBy}. Best available combo:</div>`
+          : fix.type==="move" ? `<div class="sub2" style="color:#a32d2d;">No combo partner for Table ${o.table} — move reservation to:</div>`
+          : `<div class="sub2" style="color:#a32d2d;">No open table big enough right now.</div>`;
         return `<tr>
           <td>${o.table}</td><td>${o.time}</td><td class="left">${o.guest||''}</td><td>${o.size}</td><td>${o.cap.max}</td><td><b>+${o.extra}</b></td>
-          <td class="left"><input type="text" class="notes" style="min-width:140px;" value="${String(val).replace(/"/g,'&quot;')}" placeholder="e.g. 6, 7" onchange="setComboTables('${cfgKey}',${jsStr(o.table)},${jsStr(o.seatId)},this.value)"> ${statusTag}</td>
+          <td class="left">${fixLabel}<input type="text" class="notes" style="min-width:140px;" value="${String(val).replace(/"/g,'&quot;')}" placeholder="e.g. 6, 7" onchange="setComboTables('${cfgKey}',${jsStr(o.table)},${jsStr(o.seatId)},this.value)"> ${statusTag}</td>
         </tr>`;
       }).join("")}
       </table>
