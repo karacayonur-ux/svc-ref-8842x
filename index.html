@@ -1339,7 +1339,8 @@ function renderPanel(cfgKey){
     const g2 = serverBlockTotal(cfgKey, s.name, 1);
     const g3 = serverBlockTotal(cfgKey, s.name, 2);
     const dispName = getServerDisplayName(cfgKey, s.name);
-    html += `<tr class="${st.cls}"><td class="left"><input type="text" class="notes" style="font-weight:bold;min-width:110px;" placeholder="${s.name}" value="${dispName===s.name?'':String(dispName).replace(/"/g,'&quot;')}" onchange="setServerDisplayName('${cfgKey}',${jsStr(s.name)},this.value)"></td><td class="left">${s.tables.join(", ")}</td>
+    const effTablesForSummary = effectiveTablesForServer(cfgKey, s.name);
+    html += `<tr class="${st.cls}"><td class="left"><input type="text" class="notes" style="font-weight:bold;min-width:110px;" placeholder="${s.name}" value="${dispName===s.name?'':String(dispName).replace(/"/g,'&quot;')}" onchange="setServerDisplayName('${cfgKey}',${jsStr(s.name)},this.value)"></td><td class="left">${effTablesForSummary.join(", ")}</td>
       <td>${g1}</td><td>${g2}</td><td>${g3}</td><td><b>${total}</b></td><td>${turns}</td><td><b>${st.label}</b></td></tr>`;
   });
   html += `</table>`;
