@@ -376,12 +376,116 @@ function allSeatingsForCfg(cfgKey){
 }
 let SEATING_OPTIONS = {};
 // When will this table free up: the last real seating's clock time plus the
-// turn-duration rule of thumb for that party's size.
+// turn-duration rule of thumb for that party's size — or, if this table is
+// currently blocked as part of another table's oversized-party combo, not
+// before that combo's party is expected to turn either (whichever is later).
 function expectedFreeMinutes(cfgKey, table){
   const seats = tableSeatings(cfgKey, table);
-  if(!seats.length) return null;
-  const last = seats[seats.length-1];
-  return last.min + turnDurationMinutes(last.size);
+  let free = null;
+  if(seats.length){
+    const last = seats[seats.length-1];
+    free = last.min + turnDurationMinutes(last.size);
+  }
+  comboBlocksForTable(cfgKey, table).forEach(b=>{
+    const until = b.min + turnDurationMinutes(b.size);
+    if(free===null || until>free) free = until;
+  });
+  return free;
+}
+
+// A party bigger than its own table's max seats — OpenTable's "N+" table
+// field already means "combined with a neighbor," but doesn't say which one,
+// and a party can technically land oversized even without the "+" if it was
+// booked wrong. Either way the floor needs to physically block off extra
+// table(s) so a walk-in doesn't get seated on top of a party that's already
+// spread onto them. Detected purely from cover count vs. TABLE_CAPACITY —
+// no adjacency guessing happens here, only in suggestComboTables below.
+function oversizedSeatings(cfgKey){
+  const cfg = CONFIGS[cfgKey];
+  if(!cfg) return [];
+  const tables = new Set();
+  cfg.servers.forEach(s=>s.tables.forEach(t=>tables.add(String(t))));
+  const out = [];
+  tables.forEach(t=>{
+    const key = /^\d+$/.test(t) ? Number(t) : t;
+    const cap = tableCapacity(key);
+    if(!cap) return;
+    tableSeatings(cfgKey, t).forEach(seat=>{
+      if(seat.size > cap.max){
+        out.push({ table:t, seatId:seat.seatId, time:seat.time, min:seat.min,
+          size:seat.size, guest:seat.guest, cap, extra: seat.size-cap.max });
+      }
+    });
+  });
+  out.sort((a,b)=>a.min-b.min);
+  return out;
+}
+
+function comboKey(table, seatId){ return `${table}__${seatId}`; }
+// Confirmed combo tables for one specific oversized seating — hostess-entered
+// (or edited from the suggestion), never auto-applied. Returns null if
+// nothing has been confirmed yet for that seating.
+function getComboTables(cfgKey, table, seatId){
+  const m = (STATE.combos && STATE.combos[cfgKey]) || {};
+  const raw = m[comboKey(table,seatId)];
+  return raw ? parseTableList(raw) : null;
+}
+function setComboTables(cfgKey, table, seatId, val){
+  if(!STATE.combos) STATE.combos = {};
+  if(!STATE.combos[cfgKey]) STATE.combos[cfgKey] = {};
+  const k = comboKey(table, seatId);
+  const v = (val||"").trim();
+  if(v) STATE.combos[cfgKey][k] = v; else delete STATE.combos[cfgKey][k];
+  saveState(STATE);
+  renderAll();
+}
+
+// Best-effort starting point only — picks the nearest-numbered free tables
+// (closest to the source table's own number, since 1-7 is the flexible zone
+// tables actually get pushed together in) with enough combined max capacity
+// to cover the shortfall, skipping any table with an overlapping seating of
+// its own. The hostess confirms or corrects this against how the floor is
+// actually combined tonight — it is only ever a suggestion, never applied
+// automatically.
+function suggestComboTables(cfgKey, seating){
+  const cfg = CONFIGS[cfgKey];
+  if(!cfg) return [];
+  const srcNum = parseInt(seating.table, 10);
+  const allTables = [];
+  cfg.servers.forEach(s=>s.tables.forEach(t=>allTables.push(t)));
+  const windowStart = seating.min, windowEnd = seating.min + turnDurationMinutes(seating.size);
+  const candidates = allTables
+    .filter(t=>String(t)!==String(seating.table) && /^\d+$/.test(String(t)))
+    .filter(t=>{
+      const seats = tableSeatings(cfgKey, t);
+      return !seats.some(s=>{
+        const sEnd = s.min + turnDurationMinutes(s.size);
+        return s.min < windowEnd && sEnd > windowStart; // overlaps this party's stay
+      });
+    })
+    .sort((a,b)=>Math.abs(Number(a)-srcNum) - Math.abs(Number(b)-srcNum));
+  const picked = [];
+  let cap = 0;
+  for(const t of candidates){
+    if(cap >= seating.extra) break;
+    const c = tableCapacity(t);
+    if(!c) continue;
+    picked.push(t);
+    cap += c.max;
+  }
+  return picked;
+}
+
+// Which tables are currently tied up as overflow for someone else's
+// oversized party (not seated themselves, but physically pushed into
+// service for another table's combo) — kept out of walk-in suggestions and
+// shown as blocked on their own row instead of a plain "—".
+function comboBlocksForTable(cfgKey, table){
+  const t = String(table);
+  return oversizedSeatings(cfgKey)
+    .map(seating=>({ seating, tables: getComboTables(cfgKey, seating.table, seating.seatId) }))
+    .filter(({tables})=>tables && tables.map(String).includes(t))
+    .map(({seating})=>seating);
 }
 
 // For every table with two-plus reservations tonight, checks whether the
@@ -464,6 +568,7 @@ if(!STATE.history) STATE.history = {};
 if(!STATE.walkins) STATE.walkins = {};
 if(!STATE.serverNames) STATE.serverNames = {};
 if(!STATE.tableSection) STATE.tableSection = {};
+if(!STATE.combos) STATE.combos = {};
 // Custom Section builder: lets tonight's sections be drawn up freely instead
 // of picking one of the 3 fixed presets — a manager types in server names
 // and which tables belong to each, the same loose way it'd be written on a
@@ -910,16 +1015,22 @@ function renderTableRow(cfgKey, table, area, list, assignedServer, mode){
 // walk-in line has a small "✕" to remove it if it was logged by mistake.
 function renderSeatingsCell(cfgKey, table){
   const seats = tableSeatings(cfgKey, table);
-  if(!seats.length) return `<span style="color:#aaa;">—</span>`;
-  return seats.map(s=>{
+  const blocks = comboBlocksForTable(cfgKey, table);
+  const blockLines = blocks.map(b=>`<div style="white-space:nowrap;color:#a32d2d;">🔒 Blocked — combined with Table ${b.table} (${b.time} · ${b.guest||'party of '+b.size})</div>`).join("");
+  if(!seats.length) return blockLines || `<span style="color:#aaa;">—</span>`;
+  const seatLines = seats.map(s=>{
     const to = reassignedToFor(cfgKey, table, s.seatId);
     const moveTag = to ? ` <span class="suggest">→ ${to}</span>` : '';
+    const cap = tableCapacity(/^\d+$/.test(String(table)) ? Number(table) : table);
+    const overCap = cap && s.size > cap.max;
+    const overTag = overCap ? ` <span style="color:#a32d2d;font-weight:bold;">⚠ needs +${s.size-cap.max} — see combo below</span>` : '';
     if(s.source==="walkin"){
       const label = s.guest && s.guest!=="Walk-in" ? `Walk-in (${s.guest})` : "Walk-in";
-      return `<div style="white-space:nowrap;">${s.time} · ${s.size} · <span style="color:#0a6e0a;">${label}</span>${moveTag} <a href="#" onclick="removeWalkin('${cfgKey}','${s.id}');return false;" style="color:#a32d2d;text-decoration:none;">✕</a></div>`;
+      return `<div style="white-space:nowrap;">${s.time} · ${s.size} · <span style="color:#0a6e0a;">${label}</span>${moveTag}${overTag} <a href="#" onclick="removeWalkin('${cfgKey}','${s.id}');return false;" style="color:#a32d2d;text-decoration:none;">✕</a></div>`;
     }
-    return `<div style="white-space:nowrap;">${s.time} · ${s.size} · ${s.guest||''}${moveTag}</div>`;
+    return `<div style="white-space:nowrap;">${s.time} · ${s.size} · ${s.guest||''}${moveTag}${overTag}</div>`;
   }).join("");
+  return seatLines + blockLines;
 }
 
 // Fully automatic — bucketed from each table's real seatings (reservations
@@ -1311,6 +1422,7 @@ function bestTableForParty(cfgKey, partySize){
     const { total: serverLoad } = serverTotal(cfgKey, s);
     s.tables.forEach(t=>{
       if(guestTotal(cfgKey,t) > 0) return; // occupied
+      if(comboBlocksForTable(cfgKey,t).length) return; // blocked as overflow for another table's oversized party
       candidates.push({ table:t, server:s.name, serverLoad, cap:tableCapacity(t) });
     });
   });
@@ -1366,6 +1478,30 @@ function renderPanel(cfgKey){
   const cfg = CONFIGS[cfgKey];
   const rec = renderWalkinRecommendation(cfgKey);
   let html = cfgKey==='custom' ? renderCustomEditor() : '';
+  // A party bigger than its table's own max (like a 15-top landing on a
+  // 4-top "5+" table) needs extra tables physically pushed into service —
+  // flagged here from cover count alone, with a suggested combo the hostess
+  // confirms or corrects. Once confirmed, those extra tables show as
+  // blocked on their own row and drop out of walk-in suggestions above.
+  const oversized = cfg ? oversizedSeatings(cfgKey) : [];
+  if(oversized.length){
+    html += `<div class="dash" style="margin-bottom:14px;padding:10px 14px;border-color:#e0b400;">
+      <h2 style="margin:0 0 6px;color:#a32d2d;">⚠️ Oversized Parties — Need Table Combos</h2>
+      <div class="sub2" style="margin-bottom:8px;color:#888;">These reservations are bigger than their table's max seats. Confirm which extra table(s) are being pushed together to seat them — table numbers closest to the source table are suggested first, but only you know how the floor is actually combined tonight. Once confirmed, those extra tables are blocked from walk-in suggestions.</div>
+      <table><tr><th>Table</th><th>Time</th><th>Guest</th><th>Party</th><th>Table Max</th><th>Extra Needed</th><th>Combo Tables</th></tr>
+      ${oversized.map(o=>{
+        const confirmed = getComboTables(cfgKey, o.table, o.seatId);
+        const suggestion = confirmed || suggestComboTables(cfgKey, o);
+        const val = (suggestion || []).join(", ");
+        const statusTag = confirmed ? '<span class="suggest">confirmed</span>' : '<span class="sub2" style="color:#888;">suggested — confirm</span>';
+        return `<tr>
+          <td>${o.table}</td><td>${o.time}</td><td class="left">${o.guest||''}</td><td>${o.size}</td><td>${o.cap.max}</td><td><b>+${o.extra}</b></td>
+          <td class="left"><input type="text" class="notes" style="min-width:140px;" value="${String(val).replace(/"/g,'&quot;')}" placeholder="e.g. 6, 7" onchange="setComboTables('${cfgKey}',${jsStr(o.table)},${jsStr(o.seatId)},this.value)"> ${statusTag}</td>
+        </tr>`;
+      }).join("")}
+      </table>
+    </div>`;
+  }
   html += `<div class="dash" style="margin-bottom:14px;padding:10px 14px;">
     <h2 style="margin:0 0 6px;">🚶 Next Walk-in Should Go To</h2>
     <div class="sub2" style="margin-bottom:8px;">Party size: <input type="number" min="1" max="20" value="${STATE.walkinPartySize||''}" style="width:56px;padding:3px;border:1px solid var(--border);border-radius:3px;text-align:center;" onchange="setWalkinPartySize(this.value)"> <span style="color:#888;">(leave blank to just see who's lightest-loaded)</span>
@@ -1690,6 +1826,7 @@ function checkNewDay(){
     STATE.walkins = {};
     STATE.reassign = {};
     STATE.tableSection = {};
+    STATE.combos = {};
     STATE.header = { date: today };
     saveState(STATE);
   } else if(!saved){
@@ -1719,6 +1856,7 @@ function bindHeader(){
           STATE.walkins = {};
           STATE.reassign = {};
           STATE.tableSection = {};
+          STATE.combos = {};
         }
         STATE.header.date = newVal;
         saveState(STATE);
@@ -1733,11 +1871,12 @@ function bindHeader(){
 }
 
 document.getElementById("btn-reset").addEventListener("click", ()=>{
-  if(confirm("Reset all logged walk-ins, notes, pool assignments, section moves, and live reassignments? (Reservations stay — they come from OpenTable, not from here.)")){
+  if(confirm("Reset all logged walk-ins, notes, pool assignments, section moves, table combos, and live reassignments? (Reservations stay — they come from OpenTable, not from here.)")){
     STATE.data = {};
     STATE.walkins = {};
     STATE.reassign = {};
     STATE.tableSection = {};
+    STATE.combos = {};
     saveState(STATE);
     renderAll();
   }
