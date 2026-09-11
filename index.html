@@ -632,7 +632,51 @@ function reservationOpenTables(cfgKey){
   return out;
 }
 
-let STORAGE_OK = true;
+// Compares each reservation's OpenTable-assigned table against this
+     // restaurant's real table map: flags a party too big for the table it was
+     // booked on (over capacity, per TABLE_CAPACITY — an undersized party at a
+     // bigger table isn't flagged, that's normal), or an unrecognized table
+     // number (typo, or a table not in any section/POOL yet — checked across all
+     // CONFIGS, not just the currently open tab, since a reservation can predate
+     // today's section preset). Two known combo patterns are accounted for before
+     // flagging: the 1-7 zone's "+" tables (e.g. "6+") are a fully flexible
+     // combine and are never flagged (see the TABLE_CAPACITY comment above), and
+     // a "+" on a table with its own split "A" half (15+, 16+, 17+, 19+) is
+     // treated as that table combined with its A half, so the check uses their
+     // summed capacity instead of the base table's alone.
+     function reservationTableMismatchCheck(){
+            const r = RESERVATIONS_TODAY;
+            if(!r || !r.list) return [];
+            const validTables = new Set();
+            Object.values(CONFIGS).forEach(cfg=>{
+                     cfg.servers.forEach(s=>s.tables.forEach(t=>validTables.add(String(t))));
+            });
+            POOL.forEach(p=>validTables.add(String(p.t)));
+            const out = [];
+            r.list.forEach(row=>{
+                     const raw = String(row.table);
+             const table = normalizeResTable(raw);
+                     const num = Number(table);
+                     const isCombo = raw.endsWith("+");
+                     if(!validTables.has(table)){
+                                out.push({ table:row.table, time:row.time, size:row.size, guest:row.guest, issue:"unknown", detail:`Table ${row.table} isn't in any section or the bar/patio pool — check for a typo.` });
+                                return;
+                     }
+                     if(isCombo && num>=1 && num<=7) return;
+                     let cap = tableCapacity(table);
+                     if(isCombo && cap){
+                                const half = tableCapacity(table+"A");
+                                if(half) cap = { min: cap.min+half.min, max: cap.max+half.max };
+                     }
+                     if(cap && Number(row.size)>cap.max){
+                                const capLabel = cap.min===cap.max ? `${cap.max}` : `${cap.min}-${cap.max}`;
+                                out.push({ table:row.table, time:row.time, size:row.size, guest:row.guest, issue:"capacity", detail:`Table ${row.table} seats ${capLabel}${isCombo&&cap.max>tableCapacity(table).max?' combined':''}, but this party is ${row.size}.` });
+                     }
+            });
+            return out;
+     }
+     
+     let STORAGE_OK = true;
 function loadState(){
   try{ return JSON.parse(localStorage.getItem("hostbook_state")||"{}"); }
   catch(e){ STORAGE_OK = false; return {}; }
@@ -1816,7 +1860,22 @@ function renderReservationsPanel(cfgKey){
     <div class="sub2" style="margin-top:8px;">${risky.length ? `<b>${risky.length} table${risky.length>1?'s':''} at real overlap risk</b> — worst is Table ${risky[0].table} (${risky[0].slack}m short). ` : 'No tables show a negative-slack overlap risk tonight. '}${zero.length ? `${zero.length} more running with zero buffer — fine if turns run on time, no room for a late one.` : ''}</div>
   </div>`;
 
-  const open = reservationOpenTables(key);
+const mismatches = reservationTableMismatchCheck();
+       html += `<div class="dash"><h2>🔀 Reservation–Table Mismatch Check</h2>
+         <div class="sub2" style="margin-bottom:8px;color:#888;">Compares OpenTable's own table assignment for each reservation against this restaurant's real table map — flags a party that doesn't fit the table's seat count, or a table number that isn't in any section or the bar/patio pool (usually a typo). Tables 1-7 booked as a "+" combo (e.g. "6+") are a known flexible combine and are never flagged here.</div>
+             <table><caption>FLAGGED RESERVATIONS</caption>
+         <tr><th>Time</th><th>Party</th><th>Guest</th><th>Table</th><th>Issue</th></tr>
+             ${mismatches.length ? mismatches.map(m=>`<tr class="${m.issue==='unknown'?'status-CRITICAL':'status-HEAVY'}">
+                   <td><b>${m.time}</b></td>
+                         <td>${m.size}</td>
+                               <td class="left">${m.guest}</td>
+                                     <td>${m.table}</td>
+                                           <td class="left">${m.detail}</td>
+       </tr>`).join("") : '<tr><td colspan="5" class="left" style="color:#888">No mismatches — every reservation fits its assigned table.</td></tr>'}
+</table>
+       </div>`;
+     
+                      const open = reservationOpenTables(key);
   html += `<div class="dash"><h2>🟢 Open For Walk-ins</h2>
     <div class="sub2" style="margin-bottom:8px;color:#888;">Tables with zero or one reservation tonight (${CONFIGS[key].label}) — free for most or all of the shift once the shown party is seated.</div>
     <table><caption>OPEN TABLES TONIGHT</caption>
